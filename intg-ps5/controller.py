@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import ipaddress
 import logging
 from typing import Any
@@ -30,7 +31,10 @@ def account_id_to_base64(account_id: str) -> str:
         if value >= 1 << 64:
             raise ValueError("PSN account ID is out of range")
         return base64.b64encode(value.to_bytes(8, "little")).decode("ascii")
-    raw = base64.b64decode(text, validate=True)
+    try:
+        raw = base64.b64decode(text, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Invalid Base64 account ID") from exc
     if len(raw) != 8:
         raise ValueError("Expected an eight-byte Base64 account ID")
     return base64.b64encode(raw).decode("ascii")

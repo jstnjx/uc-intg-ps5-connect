@@ -155,6 +155,19 @@ class PSNAccount(PollingDevice):
         self.psn_media_image_url = str(
             title.get("conceptIconUrl") or title.get("npTitleIconUrl") or ""
         )
+        # PS5 firmware versions that still publish DDP application info can
+        # provide titles even when PSN is disabled or unavailable.
+        if self._control and local_online and not self.psn_media_title:
+            status = self._control.device.status or {}
+            self.psn_media_title = str(status.get("running-app-name") or "")
+            self.psn_media_artist = "PS5" if self.psn_media_title else ""
+            try:
+                media = self._control.device.media_info
+                self.psn_media_image_url = str(media.cover_art or "") if media else ""
+            except Exception:
+                pass
+            if self.psn_media_title:
+                self.psn_state = media_player.States.PLAYING
         self._state = str(self.psn_state)
         self.push_update()
 
