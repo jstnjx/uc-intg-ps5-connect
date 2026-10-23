@@ -1,0 +1,72 @@
+name: Build Remote integration
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify Python syntax
+        run: python -m compileall -q intg-ps5 tools
+      - name: Validate manifest
+        run: python -m json.tool driver.json >/dev/null
+      - name: Static tests
+        run: python -m unittest discover -s tests -v
+  package:
+    needs: check
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native aarch64 integration
+        run: |
+          docker run --rm --user="$(id -u):$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            unfoldedcircle/r2-pyinstaller:3.11.13-0.7.0 \
+            bash -euxo pipefail -c '
+              python -m pip install -r requirements.txt
+              python -m pip check
+              pyinstaller --clean --onedir --name intg-ps5 \
+                --collect-all pyremoteplay \
+                --collect-all psnawp_api \
+                --collect-all ucapi_framework \
+                --collect-submodules pyps4_2ndscreen \
+                --collect-all cryptography \
+                intg-ps5/driver.py
+            '
+          mkdir -p package/bin
+          cp -a dist/intg-ps5/. package/bin/
+          mv package/bin/intg-ps5 package/bin/driver
+          cp driver.json package/
+          test -x package/bin/driver
+          test -s package/driver.json
+          tar -czf uc-intg-ps5-control-aarch64.tar.gz -C package .
+      - name: Upload integration archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: uc-intg-ps5-control-aarch64
+          path: uc-intg-ps5-control-aarch64.tar.gz
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: uc-intg-ps5-control-aarch64
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: uc-intg-ps5-control-aarch64.tar.gz
+          generate_release_notes: true

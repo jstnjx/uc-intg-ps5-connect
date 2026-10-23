@@ -1,0 +1,38 @@
+{
+  "driver_id": "ps5_control_driver",
+  "version": "0.1.0",
+  "min_core_api": "0.20.0",
+  "name": {
+    "en": "PlayStation 5 Control + PSN"
+  },
+  "icon": "uc:gamepad-modern",
+  "description": {
+    "en": "Full local PS5 navigation, power, and optional PlayStation Network presence and game library. No daemon required."
+  },
+  "developer": {
+    "name": "jstnjx",
+    "url": "https://github.com/jstnjx"
+  },
+  "home_page": "https://github.com/jstnjx/uc-intg-ps5-control",
+  "setup_data_schema": {
+    "title": {
+      "en": "PlayStation 5 setup"
+    },
+    "settings": [
+      {
+        "id": "info",
+        "label": {
+          "en": "On-remote integration"
+        },
+        "field": {
+          "label": {
+            "value": {
+              "en": "Pair directly with your PlayStation 5 using Remote Play. An optional NPSSO token unlocks PSN game and cover information. No external daemon is required."
+            }
+          }
+        }
+      }
+    ]
+  },
+  "release_date": "2026-10-24"
+}
