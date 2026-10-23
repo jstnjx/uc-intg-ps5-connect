@@ -81,7 +81,7 @@ python -m unittest discover -s tests -v
 python -m compileall -q intg-ps5
 ```
 
-**GitHub Actions builds a native aarch64 `--onedir` PyInstaller bundle** using `unfoldedcircle/r2-pyinstaller`. Upload the generated tarball, not the repository ZIP. The repository also provides an optional [`unfurled`](https://github.com/JackJPowell/unfurled)-based diagnostic for Remote firmware, activities and integration lookup:
+On an ARM64-capable Docker host (including Apple Silicon with Docker Desktop), you can also build an installable archive locally with \`./build.sh\`. On x86 Linux, binfmt/QEMU for ARM64 must be installed first.\n\n**GitHub Actions builds a native aarch64 `--onedir` PyInstaller bundle** using `unfoldedcircle/r2-pyinstaller`. Upload the generated tarball, not the repository ZIP. The repository also provides an optional [`unfurled`](https://github.com/JackJPowell/unfurled)-based diagnostic for Remote firmware, activities and integration lookup:
 
 ```bash
 python tools/diagnose_remote.py http://REMOTE_IP:80 YOUR_REMOTE_API_KEY

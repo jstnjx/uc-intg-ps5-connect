@@ -43,10 +43,11 @@ jobs:
                 --collect-all cryptography \
                 intg-ps5/driver.py
             '
-          mkdir -p package/bin
+          mkdir -p package/bin package/licenses
           cp -a dist/intg-ps5/. package/bin/
           mv package/bin/intg-ps5 package/bin/driver
           cp driver.json package/
+          cp LICENSE LICENSE.sbr LICENSE.pyremoteplay THIRD_PARTY_NOTICES.md package/licenses/
           test -x package/bin/driver
           test -s package/driver.json
           tar -czf uc-intg-ps5-control-aarch64.tar.gz -C package .
