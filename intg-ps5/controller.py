@@ -122,7 +122,10 @@ class PS5Controller:
                 self._last_press = asyncio.get_running_loop().time()
                 self._ensure_idle_task()
                 return True
-            except (Exception, asyncio.CancelledError):
+            except asyncio.CancelledError:
+                self.device.disconnect()
+                raise
+            except Exception:
                 _LOG.exception("Remote Play session could not start")
                 self.device.disconnect()
                 return False
@@ -144,9 +147,10 @@ class PS5Controller:
             _LOG.exception("Idle session watcher failed")
 
     async def _drop_session(self) -> None:
-        if self.device.controller:
+        controller = getattr(self.device, "controller", None)
+        if controller:
             try:
-                self.device.controller.stop()
+                controller.stop()
             except Exception:
                 _LOG.debug("Controller stop failed", exc_info=True)
         try:

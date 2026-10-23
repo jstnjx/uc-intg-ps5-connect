@@ -101,7 +101,7 @@ class PSNAuthenticationSensor(SensorEntity):
             value = "Invalid - update NPSSO token"
         else:
             state = sensor.States.UNKNOWN
-            value = "Checking"
+            value = "Not configured" if not self._device.has_psn else "Checking"
 
         self.update(
             {

@@ -76,14 +76,11 @@ class PSNSwitch(SwitchEntity):
         cmd = switch.Commands(cmd_id)
 
         if cmd == switch.Commands.ON:
-            await self._device.power_on()
-            return StatusCodes.OK
+            return StatusCodes.OK if await self._device.power_on() else StatusCodes.SERVER_ERROR
         if cmd == switch.Commands.OFF:
-            await self._device.power_off()
-            return StatusCodes.OK
+            return StatusCodes.OK if await self._device.power_off() else StatusCodes.SERVER_ERROR
         if cmd == switch.Commands.TOGGLE:
-            await self._device.power_toggle()
-            return StatusCodes.OK
+            return StatusCodes.OK if await self._device.power_toggle() else StatusCodes.SERVER_ERROR
 
         _LOG.warning("[%s] Unhandled command: %s", self.id, cmd_id)
         return StatusCodes.NOT_IMPLEMENTED
