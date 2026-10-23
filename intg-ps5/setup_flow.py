@@ -5,6 +5,7 @@ MPL-2.0. Based on Jack Powell's uc-intg-psn setup structure.
 from __future__ import annotations
 
 import asyncio
+import binascii
 import ipaddress
 import logging
 import socket
@@ -126,13 +127,25 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             self._account_id = account_value
         try:
             account_id_to_base64(self._account_id)
-        except (ValueError, OverflowError):
+        except (ValueError, OverflowError, binascii.Error):
             return self._account_form("Account ID must be decimal or an eight-byte Base64 value.")
         if not control:
+            existing = next(
+                (cfg for cfg in self.config.all()
+                 if cfg.ps_device.get("profiles", {})
+                 .get(cfg.ps_device.get("user", ""), {})
+                 .get("id") == account_id_to_base64(self._account_id)),
+                None,
+            )
+            if not self._npsso and not existing:
+                return self._account_form("Provide NPSSO for PSN-only browsing, or enable console pairing.")
             return PSNConfig(
-                identifier="psn_" + self._account_id.replace("/", "_").replace("+", "_").replace("=", ""),
-                name=self._psn_name,
-                npsso=self._npsso,
+                identifier=existing.identifier if existing else (
+                    "psn_" + self._account_id.replace("/", "_").replace("+", "_").replace("=", "")
+                ),
+                name=self._psn_name if self._npsso else existing.name,
+                npsso=self._npsso or (existing.npsso if existing else ""),
+                ps_device=dict(existing.ps_device) if existing else {},
             )
         self._pending_device_config = PSNConfig(
             identifier="ps5_pending",
