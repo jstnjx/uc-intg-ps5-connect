@@ -1,65 +1,30 @@
 # PS5 Connect
 
-An [Unfolded Circle](https://www.unfoldedcircle.com/) Remote Two / Remote 3 integration for PlayStation 5.
+PlayStation 5 integration for the [Unfolded Circle Remote Two and Remote 3](https://www.unfoldedcircle.com/). Control your console locally and access your games and PlayStation Network data from the Remote.
 
 ## 1. Features
 
-- **Power:** Wake PS5, enter Rest Mode, toggle power.
-- **Controls:** D-pad, face buttons, shoulders, PS, Options, Share, Touchpad, plus a native Remote entity with a controller layout and physical-button mappings.
-- **Game launching:** Launch games directly by PlayStation title ID through Sony's PSN command service.
-- **Game library:** Browse installed games and apps or recently played titles, with cleaned names and no subtitles. Enrich artwork from Sony's game list, trophy API and PlayStation Store when available.
-- **Game details:** PSN playtime, play count, first played and last played dates when Sony reports them.
-- **Trophies:** Sensors for trophy level, total earned, platinum trophies and active-game completion percentage.
-- **Console identity:** Remember the paired console, account and PSN device ID; rediscover the same PS5 if its IP address changes.
-- **Session handling:** Automatically disconnect idle Remote Play sessions; recover from transient PSN errors and limit repeated wake requests.
-- **Sensors:**
-  - Currently playing game
-  - Active Title ID
-  - PSN authentication
-  - PSN API Health
-  - Installed Titles count
-  - Connection status
-  - Trophy level, total earned, platinum trophies, current-game completion
-- **Selectors:**
-  - **Profile:** Choose a Remote Play profile already paired with this PS5.
-  - **Library View:** Choose the default browser view (Installed games & apps or Recently played).
-- **Entities:** Media player, power switch, Remote, sensors and selectors. Each paired PS5 has its own entities.
-
-PSN features require a valid NPSSO token. Local power and controller functions can be configured with a PSN Account ID instead.
-
-**Game artwork and titles:** Installed games are matched with Sony's game-list
-metadata, PSNAWP play-history records, trophy title information, and where available
-the older PlayStation Store Chihiro image endpoint
-([research reference](https://github.com/hmn/home-assistant-config/issues/9)).
-The cache refreshes approximately every 15 minutes. Games without returned names
-or artwork cannot be identified reliably: the media browser uses a generic title
-and icon, with no subtitles. The title ID remains the internal launch identifier.
-
-**Select controls:** The Profile and Library View entities explicitly publish
-their options on connection and subsequent state updates. The Profile selector
-always includes the currently paired user.
+- **PS5 controls:** Wake, Rest Mode, D-pad, face buttons, triggers, PS button, Options, Share and Touchpad.
+- **Game browser:** Browse installed and recently played games in the media player, with titles and cover art where available. Launch games directly.
+- **PSN data:** Current game, playtime, game details and trophy progress.
+- **Entities:** Remote, media player, power switch, sensors and profile/library selectors.
 
 ## 2. Installation
 
-1. Download **`uc-intg-ps5-connect-v1.0.0-aarch64.tar.gz`** from the [latest release](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build workflow](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
-2. Open the Remote web configurator and go to **Settings → Integrations → Upload custom integration**. Upload the `.tar.gz` archive.
-3. Start setup and enter your **PSN token (NPSSO)**. Alternatively, enter your **PSN Account ID** for local control only. No Remote Web Configurator PIN or Core API credentials are required.
-4. Select your PS5. If it is not listed, choose **Enter IP address manually**.
-5. On the PS5, open **Settings → System → Remote Play → Link Device**. Enter the displayed eight-digit PIN to finish pairing.
+1. Get `uc-intg-ps5-connect-v1.0.0-aarch64.tar.gz` from [Releases](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
+2. In the Remote web configurator, open **Settings → Integrations → Upload custom integration** and upload the archive.
+3. Start setup. Enter a **PSN NPSSO token** for PSN features, or a **PSN Account ID** for local controls only.
+4. Select your PS5 (or enter its IP address), then enter the eight-digit code from **PS5 Settings → System → Remote Play → Link Device**.
 
-**Changing settings later:** Choose **Update information for selected device** in integration setup. Previously saved PSN credentials and pairing are reused. Enable **Re-pair PS5** only when you need to register Remote Play again.
+Enable **Remote Play** on the console first. To wake it from Rest Mode, enable **Stay Connected to the Internet** and **Enable Turning On PS5 from Network**.
 
-**Upgrading from v0.x:** Version 1.0.0 intentionally changes the integration driver ID from `ps5_control_driver` to `ps5_connect_driver`. The Remote will recognize it as a **different integration**, so you must install and configure PS5 Connect again and reassign its entities to your activities and dashboards. The old Game Library Remote and its Core API refresh setup are no longer provided; installed-game browsing and direct game launching remain in the media player. Existing v0.x installation settings are not automatically migrated.
+**PSN credentials:** Get your NPSSO token while signed in at [Sony's account endpoint](https://ca.account.sony.com/api/v1/ssocookie). You can look up a Base64 PSN Account ID using [PSNTools](https://www.psntools.com/psn/checker); decimal IDs also work. Never enter your NPSSO token or password into third-party lookup sites.
 
-Make sure **Enable Remote Play** is turned on in your PS5 settings. For waking the console from Rest Mode, enable **Stay Connected to the Internet** and **Enable Turning On PS5 from Network** in Rest Mode settings.
-
-To obtain your NPSSO token, sign in to PlayStation Network in your browser and open [Sony's NPSSO endpoint](https://ca.account.sony.com/api/v1/ssocookie). Keep the token private.
-
-To find your **PSN Account ID (Base64)** instead, use the [PSNTools PSN Checker](https://www.psntools.com/psn/checker). The integration accepts either a Base64-encoded or decimal PSN Account ID. Do not enter your PSN password or NPSSO token into third-party lookup services.
+To change settings later, use **Update information for selected device**. You only need to pair again if the console registration changes.
 
 ## 3. Manual Build
 
-**Requirements:** Git, Docker and a host capable of running Linux ARM64 containers. On Apple Silicon, Docker Desktop can run the build image natively.
+Requires Docker with Linux ARM64 support.
 
 ```bash
 git clone https://github.com/jstnjx/uc-intg-ps5-control.git
@@ -67,30 +32,12 @@ cd uc-intg-ps5-control
 ./build.sh
 ```
 
-The installable archive will be created as `uc-intg-ps5-connect-v1.0.0-aarch64.tar.gz` in the repository root. Upload this file using the installation steps above.
-
-To run source checks with Python 3.11+:
-
-```bash
-python3 -m compileall -q intg-ps5 tools
-python3 -m unittest discover -s tests -v
-```
+Output: `uc-intg-ps5-connect-v1.0.0-aarch64.tar.gz`.
 
 ## 4. Acknowledgments
 
-- [JackJPowell/uc-intg-psn](https://github.com/JackJPowell/uc-intg-psn) and [ucapi-framework](https://github.com/JackJPowell/ucapi-framework) — PSN integration and UC framework.
-- [sbr-labs/ps5-control-uc](https://github.com/sbr-labs/ps5-control-uc) — PS5 controller integration.
-- [ktnrg45/pyremoteplay](https://github.com/ktnrg45/pyremoteplay) and [Jeffser/pyremoteplay](https://github.com/Jeffser/pyremoteplay) — local Remote Play implementation and protocol compatibility fixes.
-- [PSNAWP](https://github.com/isFakeAccount/psnawp) — PlayStation Network API client.
-- [Unfolded Circle Integration API](https://github.com/unfoldedcircle/integration-python-library) — Remote entity API.
-- PXPlay desktop — interoperability research reference for PlayStation's title-launch and installed-title endpoints. No PXPlay source code is included.
+Based in part on [uc-intg-psn](https://github.com/JackJPowell/uc-intg-psn) and [ps5-control-uc](https://github.com/sbr-labs/ps5-control-uc). Uses [ucapi-framework](https://github.com/JackJPowell/ucapi-framework), [Unfolded Circle's Integration API](https://github.com/unfoldedcircle/integration-python-library), [pyremoteplay](https://github.com/ktnrg45/pyremoteplay) and [PSNAWP](https://github.com/isFakeAccount/psnawp). [Jeffser's pyremoteplay fork](https://github.com/Jeffser/pyremoteplay) and PXPlay informed compatibility research.
 
 ## 5. Licenses
 
-This integration's original and MPL-derived source is distributed under the [Mozilla Public License 2.0](LICENSE). Components retain their respective licenses:
-
-- **PS5 Control components:** [MIT](LICENSE.sbr).
-- **pyremoteplay:** [GNU GPL v3](LICENSE.pyremoteplay).
-- **UC Integration API, ucapi-framework, PSNAWP and other dependencies:** their upstream licenses apply.
-
-See [Third-party Notices](THIRD_PARTY_NOTICES.md) for sources and license information. Redistributing binaries that bundle GPL-licensed dependencies carries applicable source-availability and license obligations.
+Original and MPL-derived code: [MPL 2.0](LICENSE). PS5 control components: [MIT](LICENSE.sbr). pyremoteplay: [GPL v3](LICENSE.pyremoteplay). See [Third-party Notices](THIRD_PARTY_NOTICES.md) for other dependencies and license requirements.
