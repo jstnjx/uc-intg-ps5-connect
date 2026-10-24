@@ -181,7 +181,7 @@ class PSNMediaPlayer(MediaPlayerEntity):
             ),
             pagination=Pagination(
                 page=paging.page,
-                limit=len(items),
+                limit=paging.limit,
                 count=(total or 0) + (0 if recording or not self._device.has_control else 1),
             ),
         )
