@@ -14,7 +14,7 @@ from api import PlayStationNetwork, PlayStationNetworkData
 from const import PSNConfig
 from controller import PS5Controller, account_id_to_base64
 from game_launch import SonyGameLauncher, GameLaunchError, ConsoleSelectionError, GameLaunchTimeout, PSNAuthorizationError, normalize_title_id
-from game_metadata import fetch_installed_metadata, display_installed_title
+from game_metadata import (fetch_installed_metadata, display_installed_title, fetch_trophy_game_metadata, fetch_legacy_store_metadata, clean_game_title)
 from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 from ucapi import media_player
 from ucapi_framework.device import PollingDevice
@@ -36,6 +36,13 @@ class PSNAccount(PollingDevice):
         self._next_psn_poll = 0.0
         self._total_game_count: int | None = None
         self._recent_art: dict[str, dict[str, str]] = {}
+        self._game_details: dict[str, dict] = {}
+        self._details_lock = asyncio.Lock()
+        self.trophy_summary: dict[str, int] | None = None
+        self.active_trophy_progress: int | None = None
+        self._trophy_title_id = ""
+        self._trophy_expiry = 0.0
+        self._trophy_task: asyncio.Task | None = None
         self._metadata_expiry = 0.0
         self._metadata_task: asyncio.Task | None = None
         self._installed_titles: list[dict[str, str]] = []
@@ -332,12 +339,38 @@ class PSNAccount(PollingDevice):
                             continue
                         current = metadata.get(title, {})
                         metadata[title] = {
-                            "name": current.get("name") or str(item.name or ""),
+                            "name": current.get("name") or clean_game_title(item.name),
                             "image": current.get("image") or str(item.image_url or ""),
                             "category": current.get("category") or "",
                         }
                 except Exception:
                     _LOG.debug("[%s] PSNAWP metadata fallback unavailable", self.log_id)
+            remaining = {
+                title for title in required
+                if not (metadata.get(title, {}).get("name") and metadata.get(title, {}).get("image"))
+            }
+            if remaining:
+                trophies = await asyncio.to_thread(
+                    fetch_trophy_game_metadata, self._psn.psn.authenticator, remaining,
+                )
+                for title, info in trophies.items():
+                    prev = metadata.get(title, {})
+                    metadata[title] = {
+                        key: prev.get(key) or info.get(key, "")
+                        for key in ("name", "image", "category")
+                    }
+                remaining = {
+                    title for title in remaining
+                    if not (metadata.get(title, {}).get("name") and metadata.get(title, {}).get("image"))
+                }
+            if remaining:
+                old_store = await asyncio.to_thread(fetch_legacy_store_metadata, remaining)
+                for title, info in old_store.items():
+                    prev = metadata.get(title, {})
+                    metadata[title] = {
+                        key: prev.get(key) or info.get(key, "")
+                        for key in ("name", "image", "category")
+                    }
             # Keep earlier metadata if a transient PSN failure returns nothing.
             for title, fields in metadata.items():
                 existing = self._recent_art.get(title, {})
@@ -347,6 +380,7 @@ class PSNAccount(PollingDevice):
                 }
             if metadata:
                 self.push_update()
+            await self._publish_game_remote()
         except asyncio.CancelledError:
             raise
         except Exception:
