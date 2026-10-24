@@ -43,6 +43,13 @@ class PSNAccount(PollingDevice):
         self._trophy_title_id = ""
         self._trophy_expiry = 0.0
         self._trophy_task: asyncio.Task | None = None
+        self._game_details: dict[str, dict] = {}
+        self._details_lock = asyncio.Lock()
+        self.trophy_summary: dict[str, int] | None = None
+        self.active_trophy_progress: int | None = None
+        self._trophy_title_id = ""
+        self._trophy_expiry = 0.0
+        self._trophy_task: asyncio.Task | None = None
         self._metadata_expiry = 0.0
         self._metadata_task: asyncio.Task | None = None
         self._installed_titles: list[dict[str, str]] = []
@@ -303,6 +310,11 @@ class PSNAccount(PollingDevice):
             self._save_identity(duid=duid, name=name)
             self._installed_titles = installed
             self.installed_inventory_available = available
+            if available and self._metadata_expiry <= now and (
+                self._metadata_task is None or self._metadata_task.done()
+            ):
+                self._metadata_expiry = now + 900
+                self._metadata_task = asyncio.create_task(self._enrich_installed_titles())
             self.installed_count = len(installed) if available else None
             self._inventory_expiry = now + 300
             self.psn_error = "" if available else "Sony did not include installed-title data for this console"
@@ -695,6 +707,8 @@ class PSNAccount(PollingDevice):
             if self._trophy_task is None or self._trophy_task.done():
                 self._trophy_expiry = now + 1800
                 self._trophy_task = asyncio.create_task(self._refresh_trophies())
+        if self.psn_media_title_id != self._trophy_title_id:
+            self._trophy_expiry = 0.0
         self._state = str(self.psn_state)
         if (
             self._psn and self.psn_authenticated is True
