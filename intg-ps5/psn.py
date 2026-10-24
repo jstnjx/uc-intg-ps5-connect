@@ -13,6 +13,7 @@ from typing import Any
 from api import PlayStationNetwork, PlayStationNetworkData
 from const import PSNConfig
 from controller import PS5Controller
+from game_launch import SonyDirectLauncher, LaunchUnavailable, LaunchRejected
 from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 from ucapi import media_player
 from ucapi_framework.device import PollingDevice
@@ -28,6 +29,9 @@ class PSNAccount(PollingDevice):
         self._psn: PlayStationNetwork | None = None
         self._psn_data: PlayStationNetworkData | None = None
         self._control: PS5Controller | None = None
+        self._launcher = SonyDirectLauncher(
+            device_config.launch_endpoint, device_config.launch_device_id,
+        )
         self._connect_lock = asyncio.Lock()
         self._next_psn_poll = 0.0
         self._total_game_count: int | None = None
@@ -65,6 +69,15 @@ class PSNAccount(PollingDevice):
     @property
     def has_psn(self) -> bool:
         return bool(self._device_config.npsso)
+
+    @property
+    def can_launch_games(self) -> bool:
+        return self.has_control and self.has_psn and self._launcher.enabled
+
+    async def launch_game(self, title_id: str) -> bool:
+        if not self.can_launch_games or not self._psn or not self.psn_authenticated:
+            raise LaunchUnavailable("PSN game launch is not configured or authenticated")
+        return await self._launcher.launch(title_id, self._psn.psn.authenticator)
 
     @property
     def device_type(self) -> str:
