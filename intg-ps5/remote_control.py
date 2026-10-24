@@ -26,7 +26,7 @@ def _send(name: str) -> EntityCommand:
 
 def _button_mapping():
     return [
-        create_btn_mapping(Buttons.POWER, EntityCommand(remote.Commands.TOGGLE.value)),
+        create_btn_mapping(Buttons.POWER, EntityCommand("remote.toggle")),
         create_btn_mapping(Buttons.HOME, _send("PS")),
         create_btn_mapping(Buttons.BACK, _send("CIRCLE")),
         create_btn_mapping(Buttons.MENU, _send("OPTIONS")),
