@@ -19,7 +19,8 @@ from game_refresh import valid_refresh_time
 from const import PSNConfig
 from controller import account_id_to_base64, register_console
 from psnawp_api.utils.misc import parse_npsso_token
-from ucapi import IntegrationSetupError, RequestUserInput, SetupError
+from ucapi import (AbortDriverSetup, DriverSetupRequest, IntegrationSetupError,
+                   RequestUserInput, SetupError)
 from ucapi_framework import BaseSetupFlow
 
 _LOG = logging.getLogger(__name__)
@@ -84,6 +85,22 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         self._remote_api_key = ""
         self._account_value = ""
         self._form_refresh_enabled: bool | None = None
+
+    async def handle_driver_setup(self, msg):
+        """Clear abandoned wizard state before new or aborted setup sessions."""
+        if isinstance(msg, (DriverSetupRequest, AbortDriverSetup)):
+            self._pending_device_config = None
+            self._selected_config_id = None
+            self._step = ""
+            self._host = ""
+            self._form_refresh_enabled = None
+            self._account_value = ""
+            self._remote_api_key = ""
+            self._game_refresh_time = ""
+            self._game_refresh_timezone = ""
+            self._remote_url = ""
+            self._launch_device_id = ""
+        return await super().handle_driver_setup(msg)
 
     def get_manual_entry_form(self) -> RequestUserInput:
         return self._account_form()
