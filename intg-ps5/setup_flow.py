@@ -95,6 +95,9 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             self._host = ""
             self._form_refresh_enabled = None
             self._account_value = ""
+            self._npsso = ""
+            self._account_id = ""
+            self._psn_name = "PlayStation 5"
             self._remote_api_key = ""
             self._game_refresh_time = ""
             self._game_refresh_timezone = ""
@@ -220,10 +223,13 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         except (KeyError, ValueError):
             return self._account_form("Enter a valid timezone (e.g. Europe/Berlin).")
 
-        # A blank token on reconfigure means retain the working PSN account.
-        self._npsso = existing.npsso if existing else ""
-        self._psn_name = existing.name if existing else "PlayStation 5"
-        self._account_id = self._account_value or (
+        # Blank secret fields mean reuse the saved values, including secrets
+        # validated earlier in the same setup attempt before a form error.
+        self._npsso = self._npsso or (existing.npsso if existing else "")
+        self._psn_name = self._psn_name if self._npsso else (
+            existing.name if existing else "PlayStation 5"
+        )
+        self._account_id = self._account_value or self._account_id or (
             existing.psn_account_id if existing else ""
         )
         if not self._account_id and existing:
