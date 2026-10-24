@@ -11,8 +11,10 @@ import logging
 import socket
 import time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from api import PlayStationNetwork
+from game_refresh import valid_refresh_time
 from const import PSNConfig
 from controller import account_id_to_base64, register_console
 from psnawp_api.utils.misc import parse_npsso_token
@@ -74,6 +76,11 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         self._host = ""
         self._step = ""
         self._launch_device_id = ""
+        self._game_refresh_enabled = True
+        self._game_refresh_time = "03:00"
+        self._game_refresh_timezone = "Europe/Berlin"
+        self._remote_url = ""
+        self._remote_api_key = ""
 
     def get_manual_entry_form(self) -> RequestUserInput:
         return self._account_form()
@@ -103,6 +110,31 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 "label": {"en": "PSN console ID (optional)"},
                 "field": {"text": {"value": self._launch_device_id}},
             },
+            {
+                "id": "game_refresh_enabled",
+                "label": {"en": "Update game library automatically"},
+                "field": {"checkbox": {"value": True}},
+            },
+            {
+                "id": "game_refresh_time",
+                "label": {"en": "Daily refresh time (HH:MM)"},
+                "field": {"text": {"value": "03:00"}},
+            },
+            {
+                "id": "game_refresh_timezone",
+                "label": {"en": "Refresh timezone"},
+                "field": {"text": {"value": "Europe/Berlin"}},
+            },
+            {
+                "id": "remote_url",
+                "label": {"en": "Remote address for game updates"},
+                "field": {"text": {"value": "http://127.0.0.1"}},
+            },
+            {
+                "id": "remote_pin",
+                "label": {"en": "Remote Web Configurator PIN (for auto-update)"},
+                "field": {"password": {"value": ""}},
+            },
         ])
         return _form("Connect PlayStation Network", fields)
 
@@ -114,6 +146,44 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             len(self._launch_device_id) < 8 or len(self._launch_device_id) > 256
         ):
             return self._account_form("Invalid PSN console device ID.")
+        self._game_refresh_enabled = str(input_values.get("game_refresh_enabled", True)).lower() in ("true", "1", "on")
+        self._game_refresh_time = str(input_values.get("game_refresh_time") or "03:00").strip()
+        self._game_refresh_timezone = str(input_values.get("game_refresh_timezone") or "Europe/Berlin").strip()
+        self._remote_url = str(input_values.get("remote_url") or "http://127.0.0.1").strip().rstrip("/")
+        self._remote_api_key = ""
+        if not valid_refresh_time(self._game_refresh_time):
+            return self._account_form("Enter a valid daily refresh time (HH:MM).")
+        try:
+            ZoneInfo(self._game_refresh_timezone)
+        except (KeyError, ValueError):
+            return self._account_form("Enter a valid timezone such as Europe/Berlin.")
+        if self._game_refresh_enabled:
+            from urllib.parse import urlsplit
+            remote_parts = urlsplit(self._remote_url)
+            if remote_parts.scheme not in ("http", "https") or not remote_parts.hostname:
+                return self._account_form("Enter a valid Remote address.")
+            web_pin = str(input_values.get("remote_pin") or "").strip()
+            existing_entry = next(
+                (cfg for cfg in self.config.all() if cfg.remote_url == self._remote_url and cfg.remote_api_key),
+                None,
+            )
+            if web_pin:
+                try:
+                    import secrets
+                    from unfurled import Remote
+                    async with Remote(self._remote_url, pin=web_pin, wake_if_asleep=False) as remote:
+                        self._remote_api_key = await remote.auth.create_key(
+                            "UC PS5 Game Library " + secrets.token_hex(3)
+                        )
+                    if not self._remote_api_key:
+                        return self._account_form("Remote authentication failed.")
+                except Exception:
+                    _LOG.warning("Remote game-library authentication failed", exc_info=True)
+                    return self._account_form("Check the Remote address and Web Configurator PIN.")
+            elif existing_entry:
+                self._remote_api_key = existing_entry.remote_api_key
+            else:
+                return self._account_form("Enter your Remote Web Configurator PIN for daily game updates.")
         control = input_values.get("add_control", True)
         control = control is True or str(control).lower() in ("true", "1", "on")
         if not token_value and not account_value:
@@ -168,11 +238,32 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 console_name=existing.console_name if existing else "",
                 psn_account_id=self._account_id or (existing.psn_account_id if existing else ""),
                 library_view=existing.library_view if existing else "installed_games",
+            game_refresh_enabled=self._game_refresh_enabled,
+            game_refresh_time=self._game_refresh_time,
+            game_refresh_timezone=self._game_refresh_timezone,
+            game_refresh_last_date=existing.game_refresh_last_date if existing else "",
+            game_refresh_page_ids=list(existing.game_refresh_page_ids) if existing else [],
+            remote_url=self._remote_url if self._game_refresh_enabled else "",
+            remote_api_key=self._remote_api_key if self._game_refresh_enabled else "",
+                game_refresh_enabled=self._game_refresh_enabled,
+                game_refresh_time=self._game_refresh_time,
+                game_refresh_timezone=self._game_refresh_timezone,
+                game_refresh_last_date=existing.game_refresh_last_date if existing else "",
+                game_refresh_page_ids=list(existing.game_refresh_page_ids) if existing else [],
+                remote_url=self._remote_url if self._game_refresh_enabled else "",
+                remote_api_key=self._remote_api_key if self._game_refresh_enabled else "",
             )
         self._pending_device_config = PSNConfig(
             identifier="ps5_pending",
             name=self._psn_name,
             npsso=self._npsso,
+                game_refresh_enabled=self._game_refresh_enabled,
+                game_refresh_time=self._game_refresh_time,
+                game_refresh_timezone=self._game_refresh_timezone,
+                game_refresh_last_date=existing.game_refresh_last_date if existing else "",
+                game_refresh_page_ids=list(existing.game_refresh_page_ids) if existing else [],
+                remote_url=self._remote_url if self._game_refresh_enabled else "",
+                remote_api_key=self._remote_api_key if self._game_refresh_enabled else "",
         )
         self._step = "select"
         return await self._selection_form()
