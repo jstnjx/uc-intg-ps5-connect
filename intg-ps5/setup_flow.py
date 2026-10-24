@@ -15,7 +15,7 @@ from typing import Any
 from api import PlayStationNetwork
 from const import PSNConfig
 from controller import account_id_to_base64, register_console
-from game_launch import validate_sony_endpoint
+from game_launch import SonyDirectLauncher
 from psnawp_api.utils.misc import parse_npsso_token
 from ucapi import IntegrationSetupError, RequestUserInput, SetupError
 from ucapi_framework import BaseSetupFlow
@@ -118,9 +118,9 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             if not self._launch_endpoint or not self._launch_device_id:
                 return self._account_form("Both launch endpoint and console device ID are required.")
             try:
-                validate_sony_endpoint(self._launch_endpoint)
+                SonyDirectLauncher(self._launch_endpoint, self._launch_device_id)
             except ValueError:
-                return self._account_form("Launch URL must be an HTTPS Sony PlayStation API endpoint.")
+                return self._account_form("Provide a valid Sony HTTPS API URL and PSN console device ID.")
             if not token_value:
                 return self._account_form("An NPSSO token is required for PSN launch requests.")
         control = input_values.get("add_control", True)

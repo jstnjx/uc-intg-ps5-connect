@@ -18,10 +18,11 @@ The Remote itself performs LAN Remote Play registration, session management, but
 | Console's local online/offline status | ✓ | — |
 | Current game title, platform and cover art | — | ✓ |
 | Played-game library browsing | — | ✓ |
+| Direct game launch using PXPlay-style PSN request | — | Experimental adapter only (API unverified) |
 | PSN authentication health sensor | — | ✓ |
 | Power switch + media player entities | ✓ | Optional |
 
-Streaming apps may not reliably report their titles to PSN. The game browser is informational; games **cannot** be launched directly by title ID (Sony provides no supported public launch endpoint).
+Streaming apps may not reliably report their titles to PSN. Game launches are **not yet functional out of the box**. PXPlay has a proprietary PSN launch implementation, while Sony has not published the request route and payload. The code has an experimental, disabled-by-default Sony API adapter; it must not be advertised as verified game launching.
 
 ## Installation
 
@@ -43,9 +44,18 @@ If you don't supply NPSSO, provide Account ID and pair normally. PSN-dependent f
 - **Media player:** power, d-pad, Home → PS, Back → Circle, OK → Cross, Menu → Options, Info → Touchpad, Play/Pause → Cross (best effort, not a genuine media-playback API), and simple commands for all supported face/shoulder buttons.
 - **Power switch:** on/off/toggle.
 - **Game title sensor:** title of the currently active PSN game, when available.
+- **PLAY_MEDIA:** wired to the experimental Sony launch adapter; only advertised when developer configuration is present, and never silently falls back to button macros.
 - **Authentication sensor:** PSN status (valid, expired, or not configured).
 
 Simple commands also include `SESSION_DISCONNECT` (suspends for two minutes) and `SESSION_RECONNECT`. Disconnecting the session can be necessary to access certain PS5 settings that Remote Play locks out.
+
+## Experimental PXPlay-style game launching
+
+PXPlay 3.0+ confirms that supported games can be launched on a PS5 using PSN and a title ID, but its implementation is proprietary and no publicly verified Sony launch request is currently available. **This repository does not ship a guessed endpoint or report launch success by default.**
+
+The integration now contains `intg-ps5/game_launch.py`: a guarded adapter with title-ID validation, HTTPS Sony-domain restrictions, PSNAWP-authenticated request submission, serialized launches and explicit error handling. The **Play** button and `PLAY_MEDIA` command are exposed only if a launch endpoint and PSN console device ID are supplied in the optional developer-only setup fields. The current `deviceId` / `titleId` request body is provisional and may not match Sony's actual API. An HTTP 200/202/204 merely means a request was accepted, **not** that the game started.
+
+For a real release, the outstanding work is to identify the exact Sony endpoint, request payload, device identifier, permissions and success/verification response, then confirm behavior on a normal retail PS5. Neither PXPlay nor a second computer is run or required by the proposed integration architecture. Until this is established, leave the experimental fields empty and the game library remains browse-only. There is **no reliable working one-click game launch in this version**.
 
 ## How local control works
 
