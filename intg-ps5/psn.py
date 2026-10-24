@@ -108,7 +108,8 @@ class PSNAccount(PollingDevice):
             for name, data in profiles.items():
                 if isinstance(data, dict) and data.get("id"):
                     valid.add(str(name))
-        if selected and isinstance(profiles, dict) and selected in profiles:
+        if selected:
+            # has_control already verifies this user has paired credentials.
             valid.add(selected)
         return sorted(valid)
 
