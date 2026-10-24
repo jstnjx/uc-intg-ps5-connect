@@ -135,11 +135,7 @@ class PSNAccount(PollingDevice):
             return False
         async with self._reauth_lock:
             try:
-                def reconnect():
-                    client = PlayStationNetwork(self._device_config.npsso, asyncio.get_running_loop())
-                    return client
-                # Client constructor runs in a thread, but must receive the actual
-                # running event loop obtained outside that thread.
+                # Obtain event loop before entering the worker thread.
                 loop = asyncio.get_running_loop()
                 client = await asyncio.to_thread(PlayStationNetwork, self._device_config.npsso, loop)
                 await asyncio.to_thread(client.get_user)
@@ -320,7 +316,14 @@ class PSNAccount(PollingDevice):
                         _LOG.warning("[%s] LAN console host ID changed unexpectedly; ignoring status", self.log_id)
                         local_online = None
                     else:
-                        self._save_identity(host_id=host_id, name=str(status.get("host-name") or ""))
+                        self._save_identity(host_id=host_id, name=str(status.get("host-name") or ""),
+                                            ip=self._control.host)
+                        if self._config_manager:
+                            config = self._config_manager.get(self.identifier)
+                            if config and host_id and not config.ps_device.get("host_id"):
+                                config.ps_device = {**config.ps_device, "host_id": host_id}
+                                if self._config_manager.update(config):
+                                    self._device_config.ps_device = config.ps_device
             except Exception:
                 _LOG.debug("[%s] Local discovery/status unavailable", self.log_id, exc_info=True)
         now = asyncio.get_running_loop().time()
