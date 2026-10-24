@@ -158,6 +158,13 @@ class PSNAccount(PollingDevice):
                 await asyncio.to_thread(previous.close)
             return True
 
+    def _invalidate_inventory(self, reason: str) -> None:
+        """Avoid presenting a stale count as a live installed-title reading."""
+        self.installed_inventory_available = False
+        self.installed_count = None
+        self.psn_error = reason
+        self.push_update()
+
     async def refresh_installed_titles(self, *, force: bool = False) -> bool:
         """Load the per-console inventory; never conflate missing data and zero games."""
         if not self.has_psn:
@@ -171,6 +178,7 @@ class PSNAccount(PollingDevice):
                 return self.installed_inventory_available
             if not self._psn or self.psn_authenticated is False:
                 if now < self._psn_retry_after or not await self._recover_psn():
+                    self._invalidate_inventory(self.psn_error or "PSN authentication unavailable")
                     return False
             try:
                 duid, name, installed, available = await self._launcher.fetch_console_inventory(
@@ -181,6 +189,7 @@ class PSNAccount(PollingDevice):
             except PSNAuthorizationError:
                 if not await self._recover_psn():
                     self._inventory_expiry = now + 120
+                    self._invalidate_inventory(self.psn_error or "PSN authorization failed")
                     return False
                 try:
                     duid, name, installed, available = await self._launcher.fetch_console_inventory(
@@ -188,12 +197,12 @@ class PSNAccount(PollingDevice):
                         duid=self.console_duid, local_name=self._local_console_name(),
                     )
                 except GameLaunchError as exc:
-                    self.psn_error = str(exc)
                     self._inventory_expiry = now + 60
+                    self._invalidate_inventory(str(exc))
                     return False
             except GameLaunchError as exc:
-                self.psn_error = str(exc)
                 self._inventory_expiry = now + 60
+                self._invalidate_inventory(str(exc))
                 _LOG.warning("[%s] PSN inventory: %s", self.log_id, exc)
                 return False
             self._save_identity(duid=duid, name=name)
@@ -355,7 +364,7 @@ class PSNAccount(PollingDevice):
             except PSNAWPAuthenticationError:
                 self.psn_authenticated = False
                 self._psn_data = None
-                self.psn_error = "PSN token expired"
+                self._invalidate_inventory("PSN token expired")
                 self._psn_retry_after = now + 120
                 self._psn_failures += 1
                 self._next_psn_poll = self._psn_retry_after
