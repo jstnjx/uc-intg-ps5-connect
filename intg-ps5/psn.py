@@ -180,6 +180,7 @@ class PSNAccount(PollingDevice):
                 )
             except PSNAuthorizationError:
                 if not await self._recover_psn():
+                    self._inventory_expiry = now + 120
                     return False
                 try:
                     duid, name, installed, available = await self._launcher.fetch_console_inventory(
@@ -335,7 +336,10 @@ class PSNAccount(PollingDevice):
             except Exception:
                 _LOG.debug("[%s] Local discovery/status unavailable", self.log_id, exc_info=True)
         now = asyncio.get_running_loop().time()
-        if self.has_psn and not self._psn and now >= self._psn_retry_after:
+        if (
+            self.has_psn and self.psn_authenticated is False
+            and now >= self._psn_retry_after
+        ):
             await self._recover_psn()
         if self._psn and now >= self._next_psn_poll:
             self._next_psn_poll = now + 45

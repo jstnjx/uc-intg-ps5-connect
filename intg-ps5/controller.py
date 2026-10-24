@@ -75,6 +75,7 @@ class PS5Controller:
         self.device = device_factory(self.host)
         self.host_id = str(credentials.get("host_id") or "").strip()
         self._last_host_search = -1000.0
+        self._last_wake = -1000.0
         self.idle_seconds = idle_seconds
         self._lock = asyncio.Lock()
         self._last_press = 0.0
@@ -208,8 +209,13 @@ class PS5Controller:
         return await self.ensure_session()
 
     async def wake(self) -> bool:
+        now = asyncio.get_running_loop().time()
+        # Repeated remote/automation power commands should not flood UDP wake.
+        if now - self._last_wake < 8:
+            return True
         try:
             await asyncio.to_thread(self.device.wakeup, self.username, self.profiles)
+            self._last_wake = now
             if self._wake_task is None or self._wake_task.done():
                 self._wake_task = asyncio.create_task(self._warm_after_wakeup())
             return True
