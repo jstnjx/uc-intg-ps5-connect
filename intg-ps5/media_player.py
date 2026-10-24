@@ -42,8 +42,6 @@ class PSNMediaPlayer(MediaPlayerEntity):
         features = []
         if device.has_psn:
             features.append(media_player.Features.BROWSE_MEDIA)
-        if device.can_launch_games:
-            features.append(media_player.Features.PLAY_MEDIA)
         if device.has_control:
             features += [
                 media_player.Features.ON_OFF,
@@ -84,18 +82,6 @@ class PSNMediaPlayer(MediaPlayerEntity):
         self, cmd_id: str, params: dict[str, Any] | None = None, *, websocket: Any
     ) -> StatusCodes:
         params = params or {}
-        if cmd_id == media_player.Commands.PLAY_MEDIA:
-            if not self._device.can_launch_games:
-                return StatusCodes.NOT_IMPLEMENTED
-            media_id = params.get(media_player.Attributes.MEDIA_ID) or params.get("media_id")
-            if not media_id:
-                return StatusCodes.BAD_REQUEST
-            try:
-                accepted = await self._device.launch_game(str(media_id))
-                return StatusCodes.OK if accepted else StatusCodes.SERVER_ERROR
-            except Exception:
-                _LOG.exception("Sony PSN game launch failed for %s", media_id)
-                return StatusCodes.SERVER_ERROR
         if not self._device.has_control:
             return StatusCodes.SERVICE_UNAVAILABLE
         try:
@@ -145,7 +131,7 @@ class PSNMediaPlayer(MediaPlayerEntity):
                 if game.last_played_date_time else None,
                 media_class=media_player.MediaClass.GAME,
                 can_browse=False,
-                can_play=self._device.can_launch_games,
+                can_play=False,
                 thumbnail=str(game.image_url) if game.image_url else None,
             )
             for game in titles

@@ -15,7 +15,6 @@ from typing import Any
 from api import PlayStationNetwork
 from const import PSNConfig
 from controller import account_id_to_base64, register_console
-from game_launch import SonyDirectLauncher
 from psnawp_api.utils.misc import parse_npsso_token
 from ucapi import IntegrationSetupError, RequestUserInput, SetupError
 from ucapi_framework import BaseSetupFlow
@@ -74,8 +73,6 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         self._psn_name = "PlayStation 5"
         self._host = ""
         self._step = ""
-        self._launch_endpoint = ""
-        self._launch_device_id = ""
 
     def get_manual_entry_form(self) -> RequestUserInput:
         return self._account_form()
@@ -96,33 +93,12 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
              "field": {"text": {"value": ""}}},
             {"id": "add_control", "label": {"en": "Pair PS5 for local navigation and power"},
              "field": {"checkbox": {"value": True}}},
-            _label(
-                "Developer-only: Sony's PSN direct-game-launch endpoint is not public. "
-                "The fields below remain blank unless you have a separately verified "
-                "HTTPS Sony launch API endpoint and PSN console device ID.",
-                "launch_help",
-            ),
-            {"id": "launch_endpoint", "label": {"en": "Experimental Sony launch API URL (optional)"},
-             "field": {"text": {"value": self._launch_endpoint}}},
-            {"id": "launch_device_id", "label": {"en": "PSN console device ID (optional)"},
-             "field": {"text": {"value": self._launch_device_id}}},
         ]
         return _form("PlayStation 5 account", fields)
 
     async def query_device(self, input_values: dict[str, Any]):
         token_value = str(input_values.get("npsso") or "").strip()
         account_value = str(input_values.get("account_id") or "").strip()
-        self._launch_endpoint = str(input_values.get("launch_endpoint") or "").strip()
-        self._launch_device_id = str(input_values.get("launch_device_id") or "").strip()
-        if self._launch_endpoint or self._launch_device_id:
-            if not self._launch_endpoint or not self._launch_device_id:
-                return self._account_form("Both launch endpoint and console device ID are required.")
-            try:
-                SonyDirectLauncher(self._launch_endpoint, self._launch_device_id)
-            except ValueError:
-                return self._account_form("Provide a valid Sony HTTPS API URL and PSN console device ID.")
-            if not token_value:
-                return self._account_form("An NPSSO token is required for PSN launch requests.")
         control = input_values.get("add_control", True)
         control = control is True or str(control).lower() in ("true", "1", "on")
         if not token_value and not account_value:
@@ -170,8 +146,6 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 name=self._psn_name if self._npsso else existing.name,
                 npsso=self._npsso or (existing.npsso if existing else ""),
                 ps_device=dict(existing.ps_device) if existing else {},
-                launch_endpoint=self._launch_endpoint or (existing.launch_endpoint if existing else ""),
-                launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
             )
         self._pending_device_config = PSNConfig(
             identifier="ps5_pending",
@@ -256,6 +230,4 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             name=self._psn_name if self._psn_name != "PlayStation 5" else f"PlayStation 5 ({host})",
             npsso=self._npsso or (existing.npsso if existing else ""),
             ps_device=credentials,
-            launch_endpoint=self._launch_endpoint or (existing.launch_endpoint if existing else ""),
-            launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
         )
