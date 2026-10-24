@@ -19,7 +19,7 @@ _LOG = logging.getLogger(__name__)
 COLS = 4
 ROWS = 6
 PAGE_SIZE = COLS * ROWS
-MAX_PAGES = 12
+MAX_PAGES = 32
 
 
 def game_command(title_id: str) -> str:
@@ -45,10 +45,10 @@ def make_game_pages(rows: list[dict], metadata: dict) -> tuple[list[UiPage], lis
         seen.add(command)
         label = clean_game_title(metadata.get(title, {}).get("name") or row.get("name"))
         if not label:
-            # A title without a confirmed display name remains launchable
-            # from the media browser, but is not an ambiguous unlabeled tile.
-            continue
-        items.append((label[:26], command))
+            # Keep every installed title launchable, even when Sony has no
+            # public title metadata. Never invent the game name.
+            label = title
+        items.append((label[:22], command))
         commands.append(command)
         if len(items) >= MAX_PAGES * PAGE_SIZE:
             break
@@ -68,12 +68,12 @@ def make_game_pages(rows: list[dict], metadata: dict) -> tuple[list[UiPage], lis
 
 
 class PS5GameLibraryRemote(RemoteEntity):
-    """Snapshot of named installed titles, each as a 4x6 launch button."""
+    """Snapshot of installed titles, each as a 4x6 launch button."""
 
     def __init__(self, device_config, device):
         pages, commands = make_game_pages(device._installed_titles, device._recent_art)
         if not pages:
-            raise ValueError("No named games available for a library Remote")
+            raise ValueError("No installed titles available for a library Remote")
         super().__init__(
             create_entity_id(EntityTypes.REMOTE, f"{device_config.identifier}_game_library"),
             f"{device_config.name} Game Library",
