@@ -87,7 +87,7 @@ class PSNMediaPlayer(MediaPlayerEntity):
         if cmd_id == media_player.Commands.PLAY_MEDIA:
             if not self._device.can_launch_games:
                 return StatusCodes.NOT_IMPLEMENTED
-            media_id = params.get(media_player.Options.MEDIA_ID) or params.get("media_id")
+            media_id = params.get(media_player.Attributes.MEDIA_ID) or params.get("media_id")
             if not media_id:
                 return StatusCodes.BAD_REQUEST
             try:
