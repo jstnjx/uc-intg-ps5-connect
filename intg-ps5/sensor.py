@@ -173,3 +173,74 @@ class PSNConnectionSensor(SensorEntity):
             sensor.Attributes.STATE: state,
             sensor.Attributes.VALUE: value,
         })
+
+
+class PSNActiveTitleIdSensor(SensorEntity):
+    """PSN/console title ID for game-aware activity rules."""
+
+    def __init__(self, device_config: PSNConfig, device: PSNAccount):
+        super().__init__(
+            create_entity_id(EntityTypes.SENSOR, f"{device_config.identifier}_active_title_id"),
+            f"{device_config.name} Active Title ID",
+            features=[],
+            attributes={
+                sensor.Attributes.STATE: sensor.States.UNKNOWN,
+                sensor.Attributes.VALUE: "",
+            },
+            device_class=sensor.DeviceClasses.CUSTOM,
+            options={},
+        )
+        self._device = device
+        self.subscribe_to_device(device)
+
+    async def sync_state(self) -> None:
+        from ucapi import media_player
+
+        active = self._device.psn_state == media_player.States.PLAYING
+        title_id = self._device.psn_media_title_id if active else ""
+        self.update({
+            sensor.Attributes.STATE: sensor.States.ON if title_id else sensor.States.UNKNOWN,
+            sensor.Attributes.VALUE: title_id,
+        })
+
+
+class PSNAPISensor(SensorEntity):
+    """PSN login and API availability status, separate from LAN connectivity."""
+
+    def __init__(self, device_config: PSNConfig, device: PSNAccount):
+        super().__init__(
+            create_entity_id(EntityTypes.SENSOR, f"{device_config.identifier}_psn_health"),
+            f"{device_config.name} PSN API Health",
+            features=[],
+            attributes={
+                sensor.Attributes.STATE: sensor.States.UNKNOWN,
+                sensor.Attributes.VALUE: "Checking",
+            },
+            device_class=sensor.DeviceClasses.CUSTOM,
+            options={},
+        )
+        self._device = device
+        self.subscribe_to_device(device)
+
+    async def sync_state(self) -> None:
+        device = self._device
+        if not device.has_psn:
+            state, value = sensor.States.UNKNOWN, "Not configured"
+        elif device.psn_authenticated is True:
+            state = sensor.States.ON
+            value = "Degraded" if device.psn_error else "Connected"
+        elif device.psn_authenticated is False:
+            state = sensor.States.ON
+            error = device.psn_error.lower()
+            if "expired" in error or "update npsso" in error:
+                value = "Authentication expired"
+            elif "sign-in" in error or "authorization" in error:
+                value = "Authentication failed"
+            else:
+                value = "Reconnecting"
+        else:
+            state, value = sensor.States.UNKNOWN, "Checking"
+        self.update({
+            sensor.Attributes.STATE: state,
+            sensor.Attributes.VALUE: value,
+        })
