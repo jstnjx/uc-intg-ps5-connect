@@ -27,5 +27,5 @@ cp driver.json package/
 cp LICENSE LICENSE.sbr LICENSE.pyremoteplay THIRD_PARTY_NOTICES.md package/licenses/
 test -x package/bin/driver
 test -s package/driver.json
-tar -czf uc-intg-ps5-control-aarch64.tar.gz -C package .
-printf '\nInstallable artifact: %s\n' "$PWD/uc-intg-ps5-control-aarch64.tar.gz"
+tar -czf uc-intg-ps5-connect-aarch64.tar.gz -C package .
+printf '\nInstallable artifact: %s\n' "$PWD/uc-intg-ps5-connect-aarch64.tar.gz"

@@ -1,13 +1,13 @@
 {
   "driver_id": "ps5_control_driver",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "min_core_api": "0.20.0",
   "name": {
-    "en": "PlayStation 5 Control + PSN"
+    "en": "PS5 Connect"
   },
   "icon": "uc:gamepad-modern",
   "description": {
-    "en": "PS5 control, SVG game library, trophies and optional daily refresh with improved setup."
+    "en": "Connect and control your PlayStation 5, launch games, browse your library, and view PSN trophies and playtime."
   },
   "developer": {
     "name": "jstnjx",
@@ -16,7 +16,7 @@
   "home_page": "https://github.com/jstnjx/uc-intg-ps5-control",
   "setup_data_schema": {
     "title": {
-      "en": "PlayStation 5 setup"
+      "en": "PS5 Connect setup"
     },
     "settings": [
       {

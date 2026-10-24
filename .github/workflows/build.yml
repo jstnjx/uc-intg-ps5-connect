@@ -1,4 +1,4 @@
-name: Build Remote integration
+name: Build PS5 Connect
 on:
   push:
     branches: [main]
@@ -53,12 +53,12 @@ jobs:
           cp LICENSE LICENSE.sbr LICENSE.pyremoteplay THIRD_PARTY_NOTICES.md package/licenses/
           test -x package/bin/driver
           test -s package/driver.json
-          tar -czf uc-intg-ps5-control-aarch64.tar.gz -C package .
+          tar -czf uc-intg-ps5-connect-aarch64.tar.gz -C package .
       - name: Upload integration archive
         uses: actions/upload-artifact@v4
         with:
-          name: uc-intg-ps5-control-aarch64
-          path: uc-intg-ps5-control-aarch64.tar.gz
+          name: uc-intg-ps5-connect-aarch64
+          path: uc-intg-ps5-connect-aarch64.tar.gz
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -69,8 +69,8 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: uc-intg-ps5-control-aarch64
+          name: uc-intg-ps5-connect-aarch64
       - uses: softprops/action-gh-release@v2
         with:
-          files: uc-intg-ps5-control-aarch64.tar.gz
+          files: uc-intg-ps5-connect-aarch64.tar.gz
           generate_release_notes: true

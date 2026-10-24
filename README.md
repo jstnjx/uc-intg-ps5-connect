@@ -1,4 +1,4 @@
-# PlayStation 5 Control + PSN
+# PS5 Connect
 
 An [Unfolded Circle](https://www.unfoldedcircle.com/) Remote Two / Remote 3 integration for PlayStation 5.
 
@@ -63,7 +63,7 @@ always includes the currently paired user.
 
 ## 2. Installation
 
-1. Download **`uc-intg-ps5-control-aarch64.tar.gz`** from the [latest release](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build workflow](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
+1. Download **`uc-intg-ps5-connect-aarch64.tar.gz`** from the [latest release](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build workflow](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
 2. Open the Remote web configurator and go to **Settings → Integrations → Upload custom integration**. Upload the `.tar.gz` archive.
 3. Start setup and enter your **PSN token (NPSSO)**. Alternatively, enter your **PSN Account ID** for local control only. **Daily game-library updates are optional**: enable them and enter the Remote address and Web Configurator PIN only if desired.
 4. Select your PS5. If it is not listed, choose **Enter IP address manually**.
@@ -87,7 +87,7 @@ cd uc-intg-ps5-control
 ./build.sh
 ```
 
-The installable archive will be created as `uc-intg-ps5-control-aarch64.tar.gz` in the repository root. Upload this file using the installation steps above.
+The installable archive will be created as `uc-intg-ps5-connect-aarch64.tar.gz` in the repository root. Upload this file using the installation steps above.
 
 To run source checks with Python 3.11+:
 
