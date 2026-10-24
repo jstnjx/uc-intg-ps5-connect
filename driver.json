@@ -1,13 +1,13 @@
 {
-  "driver_id": "ps5_control_driver",
-  "version": "0.8.2",
+  "driver_id": "ps5_connect_driver",
+  "version": "1.0.0",
   "min_core_api": "0.20.0",
   "name": {
     "en": "PS5 Connect"
   },
   "icon": "uc:gamepad-modern",
   "description": {
-    "en": "Connect and control your PlayStation 5, launch games, browse your library, and view PSN trophies and playtime."
+    "en": "PlayStation 5 control, game browsing, direct launching, playtime and PSN trophies."
   },
   "developer": {
     "name": "jstnjx",
