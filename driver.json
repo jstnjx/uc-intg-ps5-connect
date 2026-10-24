@@ -1,13 +1,13 @@
 {
   "driver_id": "ps5_control_driver",
-  "version": "0.3.0",
+  "version": "0.2.1",
   "min_core_api": "0.20.0",
   "name": {
     "en": "PlayStation 5 Control + PSN"
   },
   "icon": "uc:gamepad-modern",
   "description": {
-    "en": "PS5 control and PSN library, with learn-once local game-launch sequences; experimental PSN launch remains unverified."
+    "en": "Local PS5 controls, PSN presence and game browsing; experimental direct-PSN launch adapter (no verified public endpoint)."
   },
   "developer": {
     "name": "jstnjx",

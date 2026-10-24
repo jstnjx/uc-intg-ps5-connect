@@ -18,43 +18,11 @@ The Remote itself performs LAN Remote Play registration, session management, but
 | Console's local online/offline status | ✓ | — |
 | Current game title, platform and cover art | — | ✓ |
 | Played-game library browsing | — | ✓ |
-| Game selection via locally recorded controller sequence | ✓ (record once) | Game list metadata |
-| True PSN title-ID game launch (PXPlay mechanism) | — | Not yet reverse-engineered |
+| Direct game launch using PXPlay-style PSN request | — | Experimental adapter only (API unverified) |
 | PSN authentication health sensor | — | ✓ |
 | Power switch + media player entities | ✓ | Optional |
 
-Streaming apps may not reliably report their titles to PSN. Direct PSN title-ID launches are **not yet functional out of the box**. PXPlay has a proprietary PSN launch implementation, while Sony has not published the request route and payload. The code has an experimental, disabled-by-default Sony API adapter; it must not be advertised as verified game launching.
-
-## Launch games from the Remote (local learn-once mode)
-
-**Functional alternative to PXPlay's proprietary PSN launch transport:** a game
-can be started by replaying the actual Remote Play controller steps you use to
-select it on the PS5. This requires no daemon and no unverified Sony API.
-Unlike direct title-ID launching via PSN, the result depends on the PS5 home
-screen being in the same state as when the sequence was recorded.
-
-1. In the **Played games** browser open **Configure local game launching**.
-2. Choose **Record launch: GAME NAME**, then tap **Play**. This starts recording
-   successful controller inputs; it does not launch the game yet.
-3. With the same integration's media-player controls, navigate to the game
-   on your PS5 and start it. For more reproducible results, begin from the
-   home screen each time and keep the sequence short.
-4. Send media-player simple command `RECORD_SAVE` to persist the sequence,
-   or `RECORD_CANCEL` to discard it.
-5. Return to **Played games**. The recorded game now has **Play** enabled.
-   Selecting it replays the recorded navigation in the Remote process.
-
-Recordings contain up to 96 inputs and preserve short delays and button
-press/release events. They are stored in that console's local configuration and
-survive integration restarts. Failed controller sends abort replay; an accepted
-sequence does **not** establish that the game actually launched. Rearranging
-home-screen tiles or opening dialogs may require recording the sequence again.
-
-**Important:** This is not PXPlay's true PSN title-ID launch functionality.
-The proprietary Sony API request is still unknown. Leave the experimental
-Sony endpoint fields blank unless you have a verified request captured from
-a compatible client. The local sequence fallback is operational without them,
-but still needs real PS5 testing.
+Streaming apps may not reliably report their titles to PSN. Game launches are **not yet functional out of the box**. PXPlay has a proprietary PSN launch implementation, while Sony has not published the request route and payload. The code has an experimental, disabled-by-default Sony API adapter; it must not be advertised as verified game launching.
 
 ## PS5 Remote Play protocol compatibility
 

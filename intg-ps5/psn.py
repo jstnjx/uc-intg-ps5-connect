@@ -13,8 +13,7 @@ from typing import Any
 from api import PlayStationNetwork, PlayStationNetworkData
 from const import PSNConfig
 from controller import PS5Controller
-from game_launch import SonyDirectLauncher, LaunchUnavailable, LaunchRejected, normalize_title_id
-from launch_recorder import GameLaunchRecorder, RecordingError, normalize_steps, replay
+from game_launch import SonyDirectLauncher, LaunchUnavailable, LaunchRejected
 from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 from ucapi import media_player
 from ucapi_framework.device import PollingDevice
@@ -33,9 +32,6 @@ class PSNAccount(PollingDevice):
         self._launcher = SonyDirectLauncher(
             device_config.launch_endpoint, device_config.launch_device_id,
         )
-        self._recorder = GameLaunchRecorder()
-        self._macro_lock = asyncio.Lock()
-        self._macro_config = config_manager
         self._connect_lock = asyncio.Lock()
         self._next_psn_poll = 0.0
         self._total_game_count: int | None = None
@@ -76,67 +72,11 @@ class PSNAccount(PollingDevice):
 
     @property
     def can_launch_games(self) -> bool:
-        # A media player can execute configured macros or a configured PSN
-        # transport, but it must not promise direct launch by title ID.
-        return self.has_control and self.has_psn
-
-    def can_launch_game(self, title_id: str) -> bool:
-        try:
-            title_id = normalize_title_id(title_id)
-        except ValueError:
-            return False
-        return title_id in self._device_config.launch_macros or self._launcher.enabled
-
-    def start_game_recording(self, title_id: str) -> bool:
-        if not self.has_control or self._macro_lock.locked():
-            return False
-        self._recorder.start(title_id)
-        _LOG.info("[%s] Started local launch recording for %s", self.log_id, title_id)
-        return True
-
-    def cancel_game_recording(self) -> bool:
-        if not self._recorder.active:
-            return False
-        self._recorder.cancel()
-        return True
-
-    def save_game_recording(self) -> bool:
-        if not self._recorder.active or not self._macro_config:
-            return False
-        try:
-            name, steps = self._recorder.finish()
-        except RecordingError:
-            _LOG.warning("[%s] Cannot save invalid game launch recording", self.log_id)
-            return False
-        config = self._macro_config.get(self.identifier)
-        if config is None:
-            return False
-        config.launch_macros = {**config.launch_macros, name: steps}
-        if not self._macro_config.update(config):
-            return False
-        self._device_config.launch_macros = config.launch_macros
-        _LOG.info("[%s] Stored %d local launch steps for %s", self.log_id, len(steps), name)
-        return True
+        return self.has_control and self.has_psn and self._launcher.enabled
 
     async def launch_game(self, title_id: str) -> bool:
-        title_id = normalize_title_id(title_id)
-        if not self.has_control:
-            raise LaunchUnavailable("PS5 Remote Play control is not paired")
-        if self._recorder.active:
-            raise LaunchUnavailable("Finish or cancel the active launch recording first")
-        # Local recorded sequence is reliable as a *sequence of inputs*, not
-        # proof that the selected game started. Keep PSN transport optional.
-        steps = self._device_config.launch_macros.get(title_id)
-        if steps is not None:
-            if not self._control:
-                raise LaunchUnavailable("PS5 Remote Play controller is offline")
-            async with self._macro_lock:
-                return await asyncio.wait_for(
-                    replay(steps, self._control.button),
-                    timeout=100,
-                )
-        if not self._launcher.enabled or not self._psn or not self.psn_authenticated:
-            raise LaunchUnavailable("No recorded launch or verified PSN transport for this game")
+        if not self.can_launch_games or not self._psn or not self.psn_authenticated:
+            raise LaunchUnavailable("PSN game launch is not configured or authenticated")
         return await self._launcher.launch(title_id, self._psn.psn.authenticator)
 
     @property
@@ -288,15 +228,9 @@ class PSNAccount(PollingDevice):
         return await self.send_button("PS")
 
     async def send_button(self, button: str, action: str = "tap") -> bool:
-        if not self._control or self._macro_lock.locked():
+        if not self._control:
             return False
-        ok = await self._control.button(button, action)
-        if ok and self._recorder.active:
-            try:
-                self._recorder.add(button, action)
-            except RecordingError:
-                _LOG.warning("[%s] Launch recording exceeded limits; discarded", self.log_id)
-        return ok
+        return await self._control.button(button, action)
 
     async def release_session(self) -> bool:
         return await self._control.release_session() if self._control else False

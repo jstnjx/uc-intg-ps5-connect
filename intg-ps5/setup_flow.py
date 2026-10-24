@@ -172,7 +172,6 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 ps_device=dict(existing.ps_device) if existing else {},
                 launch_endpoint=self._launch_endpoint or (existing.launch_endpoint if existing else ""),
                 launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
-                launch_macros=dict(existing.launch_macros) if existing else {},
             )
         self._pending_device_config = PSNConfig(
             identifier="ps5_pending",
@@ -259,5 +258,4 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             ps_device=credentials,
             launch_endpoint=self._launch_endpoint or (existing.launch_endpoint if existing else ""),
             launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
-            launch_macros=dict(existing.launch_macros) if existing else {},
         )
