@@ -73,33 +73,51 @@ def fetch_trophy_game_metadata(authenticator, title_ids: set[str]) -> dict[str, 
     return found
 
 
-def fetch_legacy_store_metadata(title_ids: set[str], *, max_items: int = 8) -> dict[str, dict[str, str]]:
-    """2017-era Chihiro store fallback for CUSA IDs only. May be retired/404.
+def fetch_legacy_store_metadata(title_ids: set[str], *, max_items: int = 40) -> dict[str, dict[str, str]]:
+    """Retrieve CUSA metadata from Sony's historic Chihiro title endpoint.
 
-    Never infer a title or image from a bare identifier on failed requests.
+    Some records are still available, but coverage is not guaranteed. Requests
+    are restricted to Sony's fixed host and well-formed title IDs, with a
+    bounded worker pool. Never substitute unrelated cover images.
     """
     try:
         import requests
+        from concurrent.futures import ThreadPoolExecutor
     except ImportError:
         return {}
-    result = {}
-    for title in sorted(t for t in title_ids if t.startswith("CUSA"))[:max_items]:
+
+    valid = sorted({t for t in title_ids if re.fullmatch(r"CUSA[0-9]{5}", t)})[:max_items]
+
+    def lookup(title: str):
         try:
             url = ("https://store.playstation.com/store/api/chihiro/"
                    f"00_09_000/titlecontainer/US/en/999/{title}_00")
             response = requests.get(url, timeout=3, allow_redirects=False)
             if response.status_code != 200:
-                continue
+                return title, None
             data = response.json()
-            image = next((v.get("url", "") for v in data.get("images", [])
-                          if isinstance(v, dict) and v.get("type") in (1, 2)
-                          and str(v.get("url", "")).startswith("https://")), "")
-            title_name = clean_game_title(data.get("name") or data.get("title"))
-            if title_name or image:
-                result[title] = {"name": title_name, "image": image, "category": ""}
+            if not isinstance(data, dict):
+                return title, None
+            images = data.get("images") or []
+            image = ""
+            for preferred in (10, 12, 13, 1, 2, 9):
+                image = next((
+                    str(item.get("url", ""))
+                    for item in images
+                    if isinstance(item, dict) and item.get("type") == preferred
+                    and str(item.get("url", "")).startswith("https://")
+                ), "")
+                if image:
+                    break
+            name = clean_game_title(data.get("name") or data.get("title"))
+            return title, {"name": name, "image": image, "category": ""} if name or image else None
         except (requests.RequestException, ValueError, TypeError):
-            continue
-    return result
+            return title, None
+
+    if not valid:
+        return {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return {title: info for title, info in pool.map(lookup, valid) if info}
 
 
 def _title_metadata(row: object) -> tuple[str, dict[str, str]] | None:
