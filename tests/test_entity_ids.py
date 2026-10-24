@@ -52,6 +52,18 @@ class EntityIdRoutingTests(unittest.TestCase):
             "my_ps5_authentication",
         )
 
+    def test_connection_and_installed_sensors_route_to_parent(self):
+        exists = {"ps5_10_1_1_30"}.__contains__
+        for suffix in ("connection", "installed_titles"):
+            with self.subTest(suffix=suffix):
+                self.assertEqual(
+                    helper.resolve_device_id(
+                        "sensor.ps5_10_1_1_30_" + suffix,
+                        "ps5_10_1_1_30_" + suffix,
+                        exists,
+                    ), "ps5_10_1_1_30"
+                )
+
     def test_unknown_authentication_sensor_not_mapped_arbitrarily(self):
         exists = set().__contains__
         self.assertEqual(

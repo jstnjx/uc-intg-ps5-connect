@@ -134,5 +134,71 @@ class ProtocolTests(unittest.TestCase):
             launch._response_json(FakeResponse(403, {}), "game-launch")
 
 
+class InventoryTests(unittest.TestCase):
+    def test_include_fields_exact_sony_inventory(self):
+        auth = FakeAuthenticator(consoles=[{
+            "duid": "duid-console-123", "platform": "PS5",
+            "device": {"name": "Living Room PS5"},
+            "systemData": {"installedTitles": {"titles": [
+                {"npTitleId": "PPSA28183_00"},
+            ]}},
+        }])
+        clients = launch._read_clients(auth, include_system_data=True)
+        self.assertEqual(clients[0]["duid"], "duid-console-123")
+        self.assertEqual(
+            auth.requests[0][1]["params"]["includeFields"],
+            "device,systemData",
+        )
+
+    def test_installed_titles_deduplicated_and_normalized(self):
+        client = {"systemData": {"installedTitles": {"titles": [
+            {"npTitleId": "PPSA28183_00", "titleName": "Test Game"},
+            {"npTitleId": "PPSA28183", "titleName": "Duplicate"},
+            {"npTitleId": "CUSA00605_00"},
+            {"npTitleId": "../../bad"},
+            {"npTitleId": None},
+            "garbage",
+        ]}}}
+        titles = launch.parse_installed_titles(client)
+        self.assertEqual(
+            [t["title_id"] for t in titles], ["PPSA28183", "CUSA00605"]
+        )
+        self.assertEqual(titles[0]["name"], "Test Game")
+        self.assertEqual(titles[1]["name"], "")
+
+    def test_missing_inventory_is_not_a_zero_count(self):
+        console = {"duid": "duid-console-123", "device": {"name": "PS5"}}
+        self.assertEqual(launch.parse_installed_titles(console), [])
+        selected = launch.select_installed_inventory([console])
+        self.assertEqual(selected, ("duid-console-123", "PS5", [], False))
+
+    def test_valid_empty_inventory_distinguishable(self):
+        console = {
+            "duid": "duid-console-123",
+            "systemData": {"installedTitles": {"titles": []}},
+        }
+        self.assertEqual(
+            launch.select_installed_inventory([console])[3], True
+        )
+
+    def test_inventory_requires_unambiguous_console(self):
+        data = [
+            {"duid": "duid-console-123", "device": {"name": "PS5"}},
+            {"duid": "duid-console-234", "device": {"name": "PS5"}},
+        ]
+        with self.assertRaises(launch.ConsoleSelectionError):
+            launch.select_installed_inventory(data)
+        self.assertEqual(
+            launch.select_installed_inventory(
+                data, requested_duid="duid-console-234",
+            )[0],
+            "duid-console-234",
+        )
+
+    def test_authorization_errors_are_distinguishable(self):
+        with self.assertRaises(launch.PSNAuthorizationError):
+            launch._response_json(FakeResponse(401, {}), "inventory")
+
+
 if __name__ == "__main__":
     unittest.main()
