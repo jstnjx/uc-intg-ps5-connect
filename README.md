@@ -47,6 +47,8 @@ Make sure **Enable Remote Play** is turned on in your PS5 settings. For waking t
 
 To obtain your NPSSO token, sign in to PlayStation Network in your browser and open [Sony's NPSSO endpoint](https://ca.account.sony.com/api/v1/ssocookie). Keep the token private.
 
+To find your **PSN Account ID (Base64)** instead, use the [PSNTools PSN Checker](https://www.psntools.com/psn/checker). The integration accepts either a Base64-encoded or decimal PSN Account ID. Do not enter your PSN password or NPSSO token into third-party lookup services.
+
 ## 3. Manual Build
 
 **Requirements:** Git, Docker and a host capable of running Linux ARM64 containers. On Apple Silicon, Docker Desktop can run the build image natively.
