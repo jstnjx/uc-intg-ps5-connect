@@ -45,7 +45,16 @@ def refresh_date(config) -> str:
 def as_core_page(page) -> dict:
     """Keep the page JSON aligned with UC's ActivityUserInterfacePageUpdate."""
     record = asdict(page)
-    return {"name": record["name"], "grid": record["grid"], "items": record["items"]}
+    items = []
+    for raw in record["items"]:
+        # The Core REST editor expects type-qualified entity commands.
+        # The Integration API accepts unqualified "send_cmd" at setup.
+        item = {key: val for key, val in raw.items() if val is not None}
+        command = item.get("command")
+        if isinstance(command, dict) and command.get("cmd_id") == "send_cmd":
+            command["cmd_id"] = "remote.send_cmd"
+        items.append(item)
+    return {"name": record["name"], "grid": record["grid"], "items": items}
 
 
 async def update_core_library_pages(config, entity_id: str, pages: list) -> list[str]:
