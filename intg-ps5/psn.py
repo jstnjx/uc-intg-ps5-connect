@@ -311,6 +311,33 @@ class PSNAccount(PollingDevice):
             metadata = await asyncio.to_thread(
                 fetch_installed_metadata, self._psn.psn.authenticator, required,
             )
+            # Preserve the PSNAWP path used before v0.6.1 as a fallback for
+            # sparse game-list responses or transient Sony API changes.
+            unresolved = {
+                title for title in required
+                if not (metadata.get(title, {}).get("name") and metadata.get(title, {}).get("image"))
+            }
+            if unresolved:
+                try:
+                    def history():
+                        return list(islice(
+                            self._psn.client.title_stats(offset=0, page_size=50), 300,
+                        ))
+                    for item in await asyncio.to_thread(history):
+                        try:
+                            title = normalize_title_id(item.title_id)
+                        except (ValueError, AttributeError):
+                            continue
+                        if title not in unresolved:
+                            continue
+                        current = metadata.get(title, {})
+                        metadata[title] = {
+                            "name": current.get("name") or str(item.name or ""),
+                            "image": current.get("image") or str(item.image_url or ""),
+                            "category": current.get("category") or "",
+                        }
+                except Exception:
+                    _LOG.debug("[%s] PSNAWP metadata fallback unavailable", self.log_id)
             # Keep earlier metadata if a transient PSN failure returns nothing.
             for title, fields in metadata.items():
                 existing = self._recent_art.get(title, {})
