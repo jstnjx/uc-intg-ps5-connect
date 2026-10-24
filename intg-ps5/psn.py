@@ -12,7 +12,7 @@ from typing import Any
 
 from api import PlayStationNetwork, PlayStationNetworkData
 from const import PSNConfig
-from controller import PS5Controller
+from controller import PS5Controller, account_id_to_base64
 from game_launch import SonyGameLauncher, GameLaunchError, ConsoleSelectionError, GameLaunchTimeout, PSNAuthorizationError, normalize_title_id
 from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 from ucapi import media_player
@@ -31,6 +31,7 @@ class PSNAccount(PollingDevice):
         self._control: PS5Controller | None = None
         self._launcher = SonyGameLauncher()
         self._connect_lock = asyncio.Lock()
+        self._profile_lock = asyncio.Lock()
         self._next_psn_poll = 0.0
         self._total_game_count: int | None = None
         self._recent_art: dict[str, dict[str, str]] = {}
@@ -49,6 +50,7 @@ class PSNAccount(PollingDevice):
         self.console_host_id = device_config.console_host_id
         self.psn_state = media_player.States.UNKNOWN
         self.psn_media_title = ""
+        self.psn_media_title_id = ""
         self.psn_media_artist = ""
         self.psn_media_image_url = ""
         self.psn_authenticated: bool | None = None
@@ -85,6 +87,74 @@ class PSNAccount(PollingDevice):
     @property
     def can_launch_games(self) -> bool:
         return self.has_control and self.has_psn
+
+    @property
+    def profile_options(self) -> list[str]:
+        """Only registered Remote Play profiles for this console are selectable."""
+        if not self.has_control:
+            return []
+        profiles = self._device_config.ps_device.get("profiles", {})
+        return sorted(str(name) for name, data in profiles.items()
+                      if isinstance(data, dict) and data.get("id"))
+
+    @property
+    def selected_profile(self) -> str:
+        return str(self._device_config.ps_device.get("user") or "")
+
+    @property
+    def library_view(self) -> str:
+        selected = self._device_config.library_view
+        return selected if selected in ("installed_games", "psn_games") else "installed_games"
+
+    async def select_library_view(self, selection: str) -> bool:
+        if selection not in ("installed_games", "psn_games") or not self.has_psn:
+            return False
+        if selection == self.library_view:
+            return True
+        if not self._config_manager:
+            return False
+        config = self._config_manager.get(self.identifier)
+        if not config:
+            return False
+        config.library_view = selection
+        if not self._config_manager.update(config):
+            return False
+        self._device_config.library_view = selection
+        self.push_update()
+        return True
+
+    async def select_profile(self, selection: str) -> bool:
+        """Switch this PS5's paired local profile, never its console/DUID."""
+        if selection not in self.profile_options or not self.has_control:
+            return False
+        async with self._profile_lock:
+            if selection == self.selected_profile:
+                return True
+            if not self._config_manager:
+                return False
+            config = self._config_manager.get(self.identifier)
+            if not config:
+                return False
+            # The PSN cloud account and Remote Play identity must not diverge.
+            profile = config.ps_device.get("profiles", {}).get(selection, {})
+            if config.npsso and config.psn_account_id:
+                try:
+                    if profile.get("id") != account_id_to_base64(config.psn_account_id):
+                        _LOG.warning("[%s] Refusing profile from a different PSN account", self.log_id)
+                        return False
+                except ValueError:
+                    return False
+            controller = self._control
+            if controller:
+                await controller.release_session(pause_seconds=0)
+            config.ps_device = {**config.ps_device, "user": selection}
+            if not self._config_manager.update(config):
+                return False
+            self._device_config.ps_device = config.ps_device
+            if controller:
+                controller.username = selection
+            self.push_update()
+            return True
 
     def _local_console_name(self) -> str:
         if self._control:
@@ -398,6 +468,7 @@ class PSNAccount(PollingDevice):
             )
         title = data.title_metadata if active and self.psn_state == media_player.States.PLAYING else {}
         self.psn_media_title = str(title.get("titleName") or "")
+        self.psn_media_title_id = str(title.get("npTitleId") or "")
         self.psn_media_artist = str(title.get("format") or "")
         self.psn_media_image_url = str(
             title.get("conceptIconUrl") or title.get("npTitleIconUrl") or ""
@@ -407,6 +478,7 @@ class PSNAccount(PollingDevice):
         if self._control and local_online and not self.psn_media_title:
             status = self._control.device.status or {}
             self.psn_media_title = str(status.get("running-app-name") or "")
+            self.psn_media_title_id = str(status.get("running-app-titleid") or "")
             self.psn_media_artist = "PS5" if self.psn_media_title else ""
             try:
                 media = self._control.device.media_info
@@ -457,6 +529,7 @@ class PSNAccount(PollingDevice):
         if success:
             self.psn_state = media_player.States.OFF
             self.psn_media_title = ""
+            self.psn_media_title_id = ""
             self.psn_media_image_url = ""
             self.push_update()
         return success
