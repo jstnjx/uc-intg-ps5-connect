@@ -5,7 +5,6 @@ import os
 
 from const import PSNConfig
 from entity_ids import resolve_device_id
-from game_ws import FragmentingIntegrationAPI
 from media_player import PSNMediaPlayer
 from remote_control import PS5Remote
 from selection import PS5ProfileSelect, PS5LibraryViewSelect
@@ -21,14 +20,6 @@ from ucapi_framework import BaseConfigManager, BaseIntegrationDriver, get_config
 
 class PS5IntegrationDriver(BaseIntegrationDriver):
     """Resolve multiple sensors and selectors to their configured PS5."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Install the same fragmentation strategy as UC Custom Select for
-        # sizable Base64 SVG pages without changing the Integration API wire
-        # protocol. Event handlers must be attached to the replacement API.
-        self.api = FragmentingIntegrationAPI(self.loop)
-        self._setup_event_handlers()
 
     async def on_device_connected(self, device_id: str) -> None:
         await super().on_device_connected(device_id)
@@ -68,7 +59,7 @@ async def main() -> None:
             lambda cfg, dev: PS5ProfileSelect(cfg, dev) if dev.has_control else [],
             lambda cfg, dev: PS5LibraryViewSelect(cfg, dev) if dev.has_psn else [],
         ],
-        driver_id="ps5_control_driver",
+        driver_id="ps5_connect_driver",
     )
     driver.config_manager = BaseConfigManager(
         get_config_path(driver.api.config_dir_path),
