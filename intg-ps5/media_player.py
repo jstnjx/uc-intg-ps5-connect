@@ -145,8 +145,70 @@ class PSNMediaPlayer(MediaPlayerEntity):
         if not self._device.has_psn or not self._device.psn_authenticated:
             return StatusCodes.SERVICE_UNAVAILABLE
         paging: Paging = options.paging
+        folder = options.media_id or "psn_library"
+
+        if folder == "psn_library":
+            folders = [
+                BrowseMediaItem(
+                    media_id="installed_games",
+                    title="Installed games & apps",
+                    subtitle="On the paired PS5, as reported by PSN",
+                    media_class=media_player.MediaClass.DIRECTORY,
+                    can_browse=True, can_play=False,
+                ),
+                BrowseMediaItem(
+                    media_id="psn_games",
+                    title="Recently played",
+                    subtitle="PlayStation Network game history",
+                    media_class=media_player.MediaClass.DIRECTORY,
+                    can_browse=True, can_play=False,
+                ),
+            ]
+            return BrowseResults(
+                media=BrowseMediaItem(
+                    media_id="psn_library", title="PlayStation library",
+                    media_class=media_player.MediaClass.DIRECTORY,
+                    can_browse=True,
+                    items=folders[paging.offset:paging.offset + paging.limit],
+                ),
+                pagination=Pagination(
+                    page=paging.page, limit=paging.limit, count=len(folders),
+                ),
+            )
+
+        if folder == "installed_games":
+            result = await self._device.get_installed_game_library(
+                limit=paging.limit, offset=paging.offset,
+            )
+            if result is None:
+                _LOG.warning("Installed PS5 library unavailable: %s", self._device.psn_error)
+                return StatusCodes.SERVICE_UNAVAILABLE
+            entries, total = result
+            items = [
+                BrowseMediaItem(
+                    media_id=item["title_id"],
+                    title=item["name"],
+                    subtitle=item.get("category") or "Installed on PS5",
+                    media_class=media_player.MediaClass.GAME,
+                    can_browse=False, can_play=self._device.can_launch_games,
+                    thumbnail=item.get("image") or None,
+                )
+                for item in entries
+            ]
+            return BrowseResults(
+                media=BrowseMediaItem(
+                    media_id="installed_games", title="Installed games & apps",
+                    media_class=media_player.MediaClass.DIRECTORY,
+                    can_browse=True, items=items,
+                ),
+                pagination=Pagination(page=paging.page, limit=paging.limit, count=total),
+            )
+
+        if folder != "psn_games":
+            return StatusCodes.NOT_FOUND
+
         titles, total = await self._device.get_game_library(
-            limit=paging.limit, offset=paging.offset
+            limit=paging.limit, offset=paging.offset,
         )
         items = [
             BrowseMediaItem(
@@ -159,19 +221,16 @@ class PSNMediaPlayer(MediaPlayerEntity):
                 can_play=self._device.can_launch_games,
                 thumbnail=str(game.image_url) if game.image_url else None,
             )
-            for game in titles
+            for game in titles if game.title_id
         ]
         return BrowseResults(
             media=BrowseMediaItem(
-                media_id="psn_games",
-                title="Played games",
-                media_class=media_player.MediaClass.GAME,
-                can_browse=True,
-                items=items,
+                media_id="psn_games", title="Recently played",
+                media_class=media_player.MediaClass.DIRECTORY,
+                can_browse=True, items=items,
             ),
             pagination=Pagination(
-                page=paging.page,
-                limit=len(items),
+                page=paging.page, limit=paging.limit,
                 count=total if total is not None else 0,
             ),
         )
