@@ -4,6 +4,7 @@ import logging
 import os
 
 from const import PSNConfig
+from entity_ids import resolve_device_id
 from media_player import PSNMediaPlayer
 from psn import PSNAccount
 from sensor import PSNAuthenticationSensor, PSNSensor
@@ -12,12 +13,24 @@ from switch import PSNSwitch
 from ucapi_framework import BaseConfigManager, BaseIntegrationDriver, get_config_path
 
 
+class PS5IntegrationDriver(BaseIntegrationDriver):
+    """Framework driver that understands the NPSSO sensor sub-entity suffix."""
+
+    def device_from_entity_id(self, entity_id: str) -> str | None:
+        parsed = super().device_from_entity_id(entity_id)
+        return resolve_device_id(
+            entity_id,
+            parsed,
+            lambda candidate: self.get_device_config(candidate) is not None,
+        )
+
+
 async def main() -> None:
     logging.basicConfig(
         level=getattr(logging, os.getenv("UC_LOG_LEVEL", "INFO").upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    driver = BaseIntegrationDriver(
+    driver = PS5IntegrationDriver(
         device_class=PSNAccount,
         entity_classes=[PSNMediaPlayer, PSNSwitch, PSNSensor, PSNAuthenticationSensor],
         driver_id="ps5_control_driver",
