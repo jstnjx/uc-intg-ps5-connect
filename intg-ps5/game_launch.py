@@ -73,13 +73,13 @@ def _response_json(response, subject: str) -> dict:
     return data
 
 
-def _read_clients(authenticator) -> list[dict]:
+def _read_clients(authenticator, *, include_system_data: bool = False) -> list[dict]:
     consoles: list[dict] = []
     known: set[str] = set()
     for offset in range(0, 50, 10):
         response = authenticator.get(
             url=urljoin(_BASE, "clients"),
-            params={"platform": "PS5", "includeFields": "device", "limit": 10, "offset": offset},
+            params={"platform": "PS5", "includeFields": "device,systemData" if include_system_data else "device", "limit": 10, "offset": offset},
             headers=_headers(),
             allow_redirects=False,
             timeout=_REQUEST_TIMEOUT,
@@ -133,6 +133,49 @@ def choose_console(
         "to prevent accidentally launching a game on another console."
     )
 
+
+
+
+def parse_installed_titles(client: dict) -> list[dict[str, str]]:
+    """Read the exact installed-title collection exposed by PXPlay PC 3.1.1.
+
+    Console inventory can contain only npTitleId; optional display fields are
+    not assumed to exist. Preserve identifiers even without PSN history art.
+    """
+    system = client.get("systemData")
+    if not isinstance(system, dict):
+        return []
+    installed = system.get("installedTitles")
+    if not isinstance(installed, dict) or not isinstance(installed.get("titles"), list):
+        return []
+    found: dict[str, dict[str, str]] = {}
+    for row in installed["titles"]:
+        if not isinstance(row, dict):
+            continue
+        raw_id = row.get("npTitleId")
+        try:
+            title = normalize_title_id(raw_id)
+        except ValueError:
+            continue
+        if title not in found:
+            found[title] = {
+                "title_id": title,
+                "name": str(row.get("titleName") or row.get("name") or "").strip()[:160],
+                "category": str(row.get("category") or "").strip()[:40],
+            }
+    return list(found.values())
+
+
+def select_installed_inventory(
+    clients: list[dict], *, requested_duid: str = "", local_name: str = ""
+) -> tuple[str, str, list[dict[str, str]], bool]:
+    """Select a unique PS5, retaining 'unknown inventory' vs empty inventory."""
+    duid = choose_console(clients, requested_duid=requested_duid, local_name=local_name)
+    console = next(c for c in clients if c["duid"] == duid)
+    system = console.get("systemData")
+    installed = system.get("installedTitles") if isinstance(system, dict) else None
+    available = isinstance(installed, dict) and isinstance(installed.get("titles"), list)
+    return duid, _console_name(console), parse_installed_titles(console), available
 
 def _command_status(data: dict, command_id: str) -> str:
     commands = data.get("commands")
@@ -199,6 +242,26 @@ def _launch_sync(authenticator, title_id: str, preferred_duid: str, local_name: 
 class SonyGameLauncher:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
+
+    async def fetch_console_inventory(
+        self, authenticator, *, duid: str = "", local_name: str = "",
+    ) -> tuple[str, str, list[dict[str, str]], bool]:
+        """Return selected console identity and installed titles without launching."""
+        if authenticator is None:
+            raise GameLaunchError("PSN authentication is unavailable")
+        async with self._lock:
+            try:
+                clients = await asyncio.to_thread(
+                    _read_clients, authenticator, include_system_data=True,
+                )
+                return select_installed_inventory(
+                    clients, requested_duid=duid, local_name=local_name,
+                )
+            except GameLaunchError:
+                raise
+            except Exception as error:
+                _LOG.warning("Console inventory fetch failed: %s", type(error).__name__)
+                raise GameLaunchError("PSN console inventory could not be fetched") from error
 
     async def launch(
         self, *,
