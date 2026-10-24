@@ -8,6 +8,9 @@ import importlib.util
 from pathlib import Path
 import sys
 import unittest
+import sys
+import types
+from unittest.mock import patch
 
 
 BASE = Path(__file__).resolve().parents[1] / "intg-ps5"
@@ -73,6 +76,19 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(result["PPSA28183"]["name"], "Returnal")
         self.assertTrue(result["PPSA28183"]["image"].startswith("https://"))
         self.assertEqual(auth.request["params"]["npTitleIds"], "PPSA28183_00")
+
+    def test_legacy_store_image_types_and_clean_name(self):
+        fake_requests = types.SimpleNamespace(
+            RequestException=Exception,
+            get=lambda url, **kw: Response(200, {
+                "name": "Rocket League®",
+                "images": [{"type": 10, "url": "https://example.org/rocket.png"}],
+            }),
+        )
+        with patch.dict(sys.modules, {"requests": fake_requests}):
+            found = metadata.fetch_legacy_store_metadata({"CUSA01163"})
+        self.assertEqual(found["CUSA01163"]["name"], "Rocket League")
+        self.assertEqual(found["CUSA01163"]["image"], "https://example.org/rocket.png")
 
     def test_localized_name_and_image_preferred(self):
         parsed, ok = metadata.parse_titles_page({"titles": [{
