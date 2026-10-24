@@ -11,6 +11,7 @@ docker run --rm --platform linux/arm64 \
   "$IMAGE" bash -euxo pipefail -c '
     python -m pip install -r requirements.txt
     python -m pip check
+    python tools/check_remoteplay_patch.py
     pyinstaller --clean --onedir --name intg-ps5 \
       --collect-all pyremoteplay \
       --collect-all psnawp_api \

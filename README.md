@@ -24,6 +24,26 @@ The Remote itself performs LAN Remote Play registration, session management, but
 
 Streaming apps may not reliably report their titles to PSN. Game launches are **not yet functional out of the box**. PXPlay has a proprietary PSN launch implementation, while Sony has not published the request route and payload. The code has an experimental, disabled-by-default Sony API adapter; it must not be advertised as verified game launching.
 
+## PS5 Remote Play protocol compatibility
+
+The PS5 network-test handshake used by upstream `pyremoteplay 0.7.6` sends
+an outdated client version (`7`) and is rejected by newer PS5 firmware.
+This manifests as ten `Version not accepted` errors followed by
+`Network Test timed out. Using Default MTU and RTT`, even when Remote Play
+authentication succeeds. See [pyremoteplay issue #22](https://github.com/ktnrg45/pyremoteplay/issues/22).
+
+This integration pins [Jeffser's pyremoteplay fork](https://github.com/Jeffser/pyremoteplay)
+at commit `06ff76480c8cc8b35624a7aecf57ebe70eb8e915`, which selects client version **12** for PS5 and **9** for
+PS4 during the test handshake. This changes only the Python dependency inside
+the Remote integration. No additional daemon, host, or PS5 re-pairing is necessary.
+
+PSN authentication sensor subscriptions are also explicitly routed back to the
+parent PS5 device when the framework sees an `_authentication` suffix.
+
+**Note:** The fix is based on an upstream community patch and has not yet been
+validated with the specific PS5 firmware on your physical Remote 3. The network
+test can still time out for other network reasons.
+
 ## Installation
 
 1. Open [GitHub Actions](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml) and download the **uc-intg-ps5-control-aarch64** artifact from a successful run. Extract the outer artifact ZIP if GitHub supplies one; the file you upload is **`uc-intg-ps5-control-aarch64.tar.gz`**. A tagged release attaches the same installable archive.
