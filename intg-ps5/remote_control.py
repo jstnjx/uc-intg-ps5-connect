@@ -46,18 +46,19 @@ def _button_mapping():
 
 def _ui_page():
     names = [
-        ("PS", 0, 0), ("OPTIONS", 2, 0), ("SHARE", 3, 0),
-        ("UP", 1, 1), ("TRIANGLE", 3, 1),
-        ("LEFT", 0, 2), ("CROSS", 1, 2), ("RIGHT", 2, 2), ("CIRCLE", 3, 2),
-        ("DOWN", 1, 3), ("SQUARE", 3, 3),
-        ("L1", 0, 4), ("R1", 3, 4),
-        ("L2", 0, 5), ("TOUCHPAD", 1, 5), ("R2", 3, 5),
+        ("PS", "PS", 0, 0), ("OPT", "OPTIONS", 2, 0), ("SH", "SHARE", 3, 0),
+        ("↑", "UP", 1, 1), ("△", "TRIANGLE", 3, 1),
+        ("←", "LEFT", 0, 2), ("×", "CROSS", 1, 2),
+        ("→", "RIGHT", 2, 2), ("○", "CIRCLE", 3, 2),
+        ("↓", "DOWN", 1, 3), ("□", "SQUARE", 3, 3),
+        ("L1", "L1", 0, 4), ("R1", "R1", 3, 4),
+        ("L2", "L2", 0, 5), ("PAD", "TOUCHPAD", 1, 5), ("R2", "R2", 3, 5),
     ]
     return UiPage(
         "ps5_controls", "PS5 Controller", grid=Size(4, 6),
         items=[create_ui_text(
-            name, x, y, cmd=_send(name),
-        ) for name, x, y in names],
+            label, x, y, cmd=_send(command),
+        ) for label, command, x, y in names],
     )
 
 
