@@ -25,7 +25,7 @@ def resolve_device_id(
         "authentication", "installed_titles", "connection",
         "active_title_id", "psn_health", "profile", "library_view",
         "trophy_level", "platinum_trophies", "earned_trophies",
-        "current_game_trophies", "game_library",
+        "current_game_trophies",
     )
     if not entity_id.startswith(("sensor.", "select.", "remote.")):
         return parsed_device_id
