@@ -7,7 +7,7 @@ from const import PSNConfig
 from entity_ids import resolve_device_id
 from media_player import PSNMediaPlayer
 from psn import PSNAccount
-from sensor import PSNAuthenticationSensor, PSNSensor
+from sensor import PSNAuthenticationSensor, PSNSensor, PSNInstalledCountSensor, PSNConnectionSensor
 from setup_flow import PSNSetupFlow
 from switch import PSNSwitch
 from ucapi_framework import BaseConfigManager, BaseIntegrationDriver, get_config_path
@@ -32,7 +32,7 @@ async def main() -> None:
     )
     driver = PS5IntegrationDriver(
         device_class=PSNAccount,
-        entity_classes=[PSNMediaPlayer, PSNSwitch, PSNSensor, PSNAuthenticationSensor],
+        entity_classes=[PSNMediaPlayer, PSNSwitch, PSNSensor, PSNAuthenticationSensor, PSNInstalledCountSensor, PSNConnectionSensor],
         driver_id="ps5_control_driver",
     )
     driver.config_manager = BaseConfigManager(

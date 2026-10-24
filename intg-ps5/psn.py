@@ -39,6 +39,7 @@ class PSNAccount(PollingDevice):
         self.installed_inventory_available = False
         self._inventory_expiry = 0.0
         self._inventory_lock = asyncio.Lock()
+        self._inventory_task: asyncio.Task | None = None
         self.psn_error = ""
         self._psn_failures = 0
         self._psn_retry_after = 0.0
@@ -295,6 +296,13 @@ class PSNAccount(PollingDevice):
         await self.poll_device()
 
     async def disconnect(self) -> None:
+        if self._inventory_task and not self._inventory_task.done():
+            self._inventory_task.cancel()
+            try:
+                await self._inventory_task
+            except asyncio.CancelledError:
+                pass
+        self._inventory_task = None
         await super().disconnect()
         if self._control:
             await self._control.close()
@@ -393,6 +401,12 @@ class PSNAccount(PollingDevice):
             if self.psn_media_title:
                 self.psn_state = media_player.States.PLAYING
         self._state = str(self.psn_state)
+        if (
+            self._psn and self.psn_authenticated is True
+            and now >= self._inventory_expiry
+            and (self._inventory_task is None or self._inventory_task.done())
+        ):
+            self._inventory_task = asyncio.create_task(self.refresh_installed_titles())
         self.push_update()
 
     async def get_game_library(self, limit: int = 10, offset: int = 0) -> tuple[list, int | None]:

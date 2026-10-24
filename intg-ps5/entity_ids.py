@@ -22,12 +22,15 @@ def resolve_device_id(
     if (
         not parsed_device_id
         or not entity_id.startswith("sensor.")
-        or not parsed_device_id.endswith("_authentication")
+        or not any(parsed_device_id.endswith("_" + suffix)
+                   for suffix in ("authentication", "installed_titles", "connection"))
     ):
         return parsed_device_id
     if configuration_exists(parsed_device_id):
         return parsed_device_id
-    candidate = parsed_device_id.removesuffix("_authentication")
-    if candidate and configuration_exists(candidate):
-        return candidate
+    for suffix in ("authentication", "installed_titles", "connection"):
+        if parsed_device_id.endswith("_" + suffix):
+            candidate = parsed_device_id.removesuffix("_" + suffix)
+            if candidate and configuration_exists(candidate):
+                return candidate
     return parsed_device_id

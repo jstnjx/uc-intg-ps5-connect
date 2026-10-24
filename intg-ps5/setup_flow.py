@@ -244,7 +244,12 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             )
         existing = next(
             (cfg for cfg in self.config.all()
-             if cfg.ps_device.get("device_ip") == host), None
+             if cfg.ps_device.get("device_ip") == host
+             or (
+                 credentials.get("host_id")
+                 and credentials["host_id"].casefold() ==
+                     str(cfg.console_host_id or cfg.ps_device.get("host_id") or "").casefold()
+             )), None
         )
         return PSNConfig(
             identifier=existing.identifier if existing else "ps5_" + host.replace(".", "_"),
