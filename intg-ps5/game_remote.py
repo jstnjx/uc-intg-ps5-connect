@@ -1,8 +1,7 @@
-"""Installed game launch pages using supported UC Remote text UI items.
+"""Game library Remote pages with embedded 85px SVG covers in Qt StyledText.
 
-UC's native integration schema does not support inline SVG, image-backed
-text items, or pixel sizing. Each 4x6 cell is therefore a native text
-button; game art remains available in the media browser.
+The stock UC Remote UI uses Text.AutoText for native text buttons, which accepts
+the same inline Base64 SVG <img> markup as the Custom Select integration.
 """
 from __future__ import annotations
 import logging
@@ -14,6 +13,7 @@ from ucapi_framework import create_entity_id
 from ucapi_framework.entities import RemoteEntity
 from game_launch import normalize_title_id
 from game_metadata import clean_game_title
+from game_artwork import make_icon, styled_image
 
 _LOG = logging.getLogger(__name__)
 COLS = 4
@@ -29,11 +29,12 @@ def game_command(title_id: str) -> str:
     return command
 
 
-def make_game_pages(rows: list[dict], metadata: dict) -> tuple[list[UiPage], list[str]]:
+def make_game_pages(rows: list[dict], metadata: dict, icons: dict[str, str] | None = None) -> tuple[list[UiPage], list[str]]:
     pages: list[UiPage] = []
     commands: list[str] = []
     seen: set[str] = set()
     items: list[tuple[str, str]] = []
+    icons = icons or {}
     for row in rows:
         try:
             title = normalize_title_id(row.get("title_id"))
@@ -48,7 +49,8 @@ def make_game_pages(rows: list[dict], metadata: dict) -> tuple[list[UiPage], lis
             # Keep every installed title launchable, even when Sony has no
             # public title metadata. Never invent the game name.
             label = title
-        items.append((label[:22], command))
+        icon = icons.get(title) or make_icon(label)
+        items.append((styled_image(icon), command))
         commands.append(command)
         if len(items) >= MAX_PAGES * PAGE_SIZE:
             break
@@ -71,7 +73,8 @@ class PS5GameLibraryRemote(RemoteEntity):
     """Snapshot of installed titles, each as a 4x6 launch button."""
 
     def __init__(self, device_config, device):
-        pages, commands = make_game_pages(device._installed_titles, device._recent_art)
+        pages, commands = make_game_pages(device._installed_titles, device._recent_art,
+                                          getattr(device, "_game_icons", {}))
         if not pages:
             raise ValueError("No installed titles available for a library Remote")
         super().__init__(
@@ -85,6 +88,13 @@ class PS5GameLibraryRemote(RemoteEntity):
         self._device = device
         self._registered_commands = set(commands)
         self.subscribe_to_device(device)
+
+    def refresh_layout(self, pages: list[UiPage], commands: list[str]) -> None:
+        """Update in-memory routing after regenerating the Core UI pages."""
+        from dataclasses import asdict
+        self._registered_commands = set(commands)
+        self.options["simple_commands"] = list(commands)
+        self.options["user_interface"] = {"pages": [asdict(page) for page in pages]}
 
     async def sync_state(self):
         state = self._device.psn_state
