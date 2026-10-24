@@ -8,5 +8,4 @@ class PSNConfig:
     name: str
     npsso: str = ""
     ps_device: dict[str, Any] = field(default_factory=dict)
-    launch_endpoint: str = ""
     launch_device_id: str = ""
