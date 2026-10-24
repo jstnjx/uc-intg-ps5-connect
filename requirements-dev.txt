@@ -1,4 +1,3 @@
 -r requirements.txt
-unfurled>=0.6.3
 pytest>=8
 ruff>=0.8
