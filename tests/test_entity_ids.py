@@ -64,6 +64,23 @@ class EntityIdRoutingTests(unittest.TestCase):
                     ), "ps5_10_1_1_30"
                 )
 
+    def test_new_sensors_and_selects_route_to_parent(self):
+        exists = {"ps5_10_1_1_30"}.__contains__
+        for entity_type, suffix in (
+            ("sensor", "active_title_id"),
+            ("sensor", "psn_health"),
+            ("select", "profile"),
+            ("select", "library_view"),
+        ):
+            with self.subTest(type=entity_type, suffix=suffix):
+                parsed = f"ps5_10_1_1_30_{suffix}"
+                self.assertEqual(
+                    helper.resolve_device_id(
+                        f"{entity_type}.{parsed}", parsed, exists,
+                    ),
+                    "ps5_10_1_1_30",
+                )
+
     def test_unknown_authentication_sensor_not_mapped_arbitrarily(self):
         exists = set().__contains__
         self.assertEqual(
