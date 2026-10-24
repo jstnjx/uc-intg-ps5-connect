@@ -40,8 +40,9 @@ class FakeEntity:
     def subscribe_to_device(self, device):
         self.device = device
 
-    def update(self, attributes):
+    def update(self, attributes, *, force=False):
         self.last_update = attributes
+        self.last_force = force
         self.attributes.update(attributes)
 
 
@@ -234,6 +235,19 @@ class SelectInputTests(unittest.IsolatedAsyncioTestCase):
             await entity.command("select_option", {"option": "Recently played"}, websocket=None), 200,
         )
         self.assertEqual(self.device.library_view, "psn_games")
+
+    async def test_both_selects_publish_options_explicitly(self):
+        profile = select_module.PS5ProfileSelect(self.config, self.device)
+        library = select_module.PS5LibraryViewSelect(self.config, self.device)
+        await profile.sync_state()
+        await library.sync_state()
+        self.assertTrue(profile.last_force)
+        self.assertEqual(profile.last_update["options"], ["primary", "secondary"])
+        self.assertTrue(library.last_force)
+        self.assertEqual(
+            library.last_update["options"],
+            ["Installed games & apps", "Recently played"],
+        )
 
     def test_option_rotation_and_validation(self):
         options = ["primary", "secondary"]
