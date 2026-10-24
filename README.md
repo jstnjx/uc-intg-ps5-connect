@@ -7,7 +7,10 @@ An [Unfolded Circle](https://www.unfoldedcircle.com/) Remote Two / Remote 3 inte
 - **Power:** Wake PS5, enter Rest Mode, toggle power.
 - **Controls:** D-pad, face buttons, shoulders, PS, Options, Share, Touchpad, plus a native Remote entity with a controller layout and physical-button mappings.
 - **Game launching:** Launch games directly by PlayStation title ID through Sony's PSN command service.
-- **Game library:** Browse installed games and apps or recently played titles. Where available, show names and cover artwork.
+- **Game library:** Browse installed games and apps or recently played titles, with cleaned names and no subtitles. Enrich artwork from Sony's game list, trophy API and PlayStation Store when available.
+- **Game Library Remote:** Launch installed games from paged 4-column × 6-row native text-button layouts.
+- **Game details:** PSN playtime, play count, first played and last played dates when Sony reports them.
+- **Trophies:** Sensors for trophy level, total earned, platinum trophies and active-game completion percentage.
 - **Console identity:** Remember the paired console, account and PSN device ID; rediscover the same PS5 if its IP address changes.
 - **Session handling:** Automatically disconnect idle Remote Play sessions; recover from transient PSN errors and limit repeated wake requests.
 - **Sensors:**
@@ -17,6 +20,7 @@ An [Unfolded Circle](https://www.unfoldedcircle.com/) Remote Two / Remote 3 inte
   - PSN API Health
   - Installed Titles count
   - Connection status
+  - Trophy level, total earned, platinum trophies, current-game completion
 - **Selectors:**
   - **Profile:** Choose a Remote Play profile already paired with this PS5.
   - **Library View:** Choose the default browser view (Installed games & apps or Recently played).
@@ -24,12 +28,20 @@ An [Unfolded Circle](https://www.unfoldedcircle.com/) Remote Two / Remote 3 inte
 
 PSN features require a valid NPSSO token. Local power and controller functions can be configured with a PSN Account ID instead.
 
-**Game artwork and titles:** Installed titles are matched with Sony's paginated
-PlayStation game-list metadata (localized names and cover images). The integration
-caches lookups for 15 minutes. When Sony does not provide metadata for a title,
-the browser shows **Unknown PlayStation title**, its title ID and a generic
-gamepad icon; it does not fabricate a game name or cover. The **Recently played**
-view remains available through the Library View selector.
+**Game artwork and titles:** Installed games are matched with Sony's game-list
+metadata, PSNAWP play-history records, trophy title information, and where available
+the older PlayStation Store Chihiro image endpoint
+([research reference](https://github.com/hmn/home-assistant-config/issues/9)).
+The cache refreshes approximately every 15 minutes. Games without returned names
+or artwork cannot be identified reliably: the media browser uses a generic title
+and icon, with no subtitles. The title ID remains the internal launch identifier.
+
+**Game Library Remote layout:** Each page has 24 text-based launch buttons on a
+4×6 grid. It appears among available entities after the PSN installed inventory
+has loaded. UC Core keeps Remote user-interface pages as part of the configured
+entity, so remove and re-add this entity when you want to regenerate its pages
+after adding/removing games. UC's native Remote UI does not support embedded SVG
+inside text buttons or fixed 85×85-pixel SVG alignment.
 
 **Select controls:** The Profile and Library View entities explicitly publish
 their options on connection and subsequent state updates. The Profile selector

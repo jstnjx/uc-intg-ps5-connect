@@ -1,13 +1,13 @@
 {
   "driver_id": "ps5_control_driver",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "min_core_api": "0.20.0",
   "name": {
     "en": "PlayStation 5 Control + PSN"
   },
   "icon": "uc:gamepad-modern",
   "description": {
-    "en": "PlayStation 5 controller, game library, direct launching, sensors and selection controls."
+    "en": "PS5 control, installed games, 4x6 game launcher, playtime, trophy sensors and PSN artwork."
   },
   "developer": {
     "name": "jstnjx",
