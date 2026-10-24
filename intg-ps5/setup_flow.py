@@ -12,10 +12,8 @@ import logging
 import socket
 import time
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from api import PlayStationNetwork
-from game_refresh import valid_refresh_time
 from const import PSNConfig
 from controller import account_id_to_base64, register_console
 from psnawp_api.utils.misc import parse_npsso_token
@@ -78,13 +76,7 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         self._host = ""
         self._step = ""
         self._launch_device_id = ""
-        self._game_refresh_enabled = True
-        self._game_refresh_time = ""
-        self._game_refresh_timezone = ""
-        self._remote_url = ""
-        self._remote_api_key = ""
         self._account_value = ""
-        self._form_refresh_enabled: bool | None = None
 
     async def handle_driver_setup(self, msg):
         """Clear abandoned wizard state before new or aborted setup sessions."""
@@ -93,15 +85,10 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             self._selected_config_id = None
             self._step = ""
             self._host = ""
-            self._form_refresh_enabled = None
             self._account_value = ""
             self._npsso = ""
             self._account_id = ""
             self._psn_name = "PlayStation 5"
-            self._remote_api_key = ""
-            self._game_refresh_time = ""
-            self._game_refresh_timezone = ""
-            self._remote_url = ""
             self._launch_device_id = ""
         return await super().handle_driver_setup(msg)
 
@@ -113,8 +100,6 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         existing = self.selected_config_entry
         paired = bool(existing and existing.ps_device.get("profiles")
                       and existing.ps_device.get("device_ip"))
-        default_refresh = bool(existing and existing.game_refresh_enabled
-                               and existing.remote_api_key)
         fields = []
         if error:
             fields.append(_label(error, "error"))
@@ -144,48 +129,13 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 "label": {"en": "Re-pair PS5 (only if pairing changed)"},
                 "field": {"checkbox": {"value": False}},
             })
-        fields.extend([
-            {
-                "id": "launch_device_id",
-                "label": {"en": "PSN console ID (optional)"},
-                "field": {"text": {"value": self._launch_device_id or (
-                    existing.launch_device_id if existing else ""
-                )}},
-            },
-            {
-                "id": "game_refresh_enabled",
-                "label": {"en": "Enable daily game library updates"},
-                "field": {"checkbox": {"value": self._form_refresh_enabled
-                                      if self._form_refresh_enabled is not None
-                                      else default_refresh}},
-            },
-            {
-                "id": "game_refresh_time",
-                "label": {"en": "Daily update time (HH:MM)"},
-                "field": {"text": {"value": self._game_refresh_time or (
-                    existing.game_refresh_time if existing else "03:00"
-                )}},
-            },
-            {
-                "id": "game_refresh_timezone",
-                "label": {"en": "Timezone"},
-                "field": {"text": {"value": self._game_refresh_timezone or (
-                    existing.game_refresh_timezone if existing else "Europe/Berlin"
-                )}},
-            },
-            {
-                "id": "remote_url",
-                "label": {"en": "Remote address (daily updates only)"},
-                "field": {"text": {"value": self._remote_url or (
-                    existing.remote_url if existing else ""
-                )}},
-            },
-            {
-                "id": "remote_pin",
-                "label": {"en": "Web Configurator PIN (daily updates only)"},
-                "field": {"password": {"value": ""}},
-            },
-        ])
+        fields.append({
+            "id": "launch_device_id",
+            "label": {"en": "PSN console ID (optional)"},
+            "field": {"text": {"value": self._launch_device_id or (
+                existing.launch_device_id if existing else ""
+            )}},
+        })
         return _form("Edit PlayStation 5" if existing else "Connect PlayStation 5", fields)
 
     async def query_device(self, input_values: dict[str, Any]):
@@ -198,31 +148,8 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         )).strip()
         control = str(input_values.get("add_control", True)).lower() in ("true", "1", "on")
         re_pair = str(input_values.get("re_pair", False)).lower() in ("true", "1", "on")
-        self._form_refresh_enabled = (
-            str(input_values.get("game_refresh_enabled", False)).lower()
-            in ("true", "1", "on")
-        )
-        self._game_refresh_enabled = self._form_refresh_enabled
-        self._game_refresh_time = str(input_values.get("game_refresh_time") or (
-            existing.game_refresh_time if existing else "03:00"
-        )).strip()
-        self._game_refresh_timezone = str(input_values.get("game_refresh_timezone") or (
-            existing.game_refresh_timezone if existing else "Europe/Berlin"
-        )).strip()
-        self._remote_url = str(input_values.get("remote_url") or (
-            existing.remote_url if existing else ""
-        )).strip().rstrip("/")
-        self._remote_api_key = existing.remote_api_key if existing else ""
-
         if self._launch_device_id and not (8 <= len(self._launch_device_id) <= 256):
             return self._account_form("Check the PSN console ID or leave it blank.")
-        if not valid_refresh_time(self._game_refresh_time):
-            return self._account_form("Enter a valid update time (HH:MM).")
-        try:
-            ZoneInfo(self._game_refresh_timezone)
-        except (KeyError, ValueError):
-            return self._account_form("Enter a valid timezone (e.g. Europe/Berlin).")
-
         # Blank secret fields mean reuse the saved values, including secrets
         # validated earlier in the same setup attempt before a form error.
         self._npsso = self._npsso or (existing.npsso if existing else "")
@@ -269,34 +196,6 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             if old_id and account_id_to_base64(old_id) != account_id_to_base64(self._account_id):
                 return self._account_form("Select Re-pair PS5 to change PSN accounts.")
 
-        if self._game_refresh_enabled:
-            from urllib.parse import urlsplit
-            address = urlsplit(self._remote_url)
-            if address.scheme not in ("http", "https") or not address.hostname:
-                return self._account_form("Enter the Remote address for daily updates.")
-            pin = str(input_values.get("remote_pin") or "").strip()
-            if pin:
-                try:
-                    import secrets
-                    from unfurled import Remote
-                    async with Remote(self._remote_url, pin=pin, wake_if_asleep=False) as remote:
-                        new_key = await remote.auth.create_key(
-                            "UC PS5 Game Library " + secrets.token_hex(3)
-                        )
-                    if not new_key:
-                        raise ValueError("Remote returned no API key")
-                    self._remote_api_key = new_key
-                except Exception:
-                    _LOG.warning("Could not authenticate Core API for library updates",
-                                 exc_info=True)
-                    return self._account_form("Check the Remote address and PIN, or disable daily updates.")
-            elif not (existing and existing.remote_url == self._remote_url
-                      and existing.remote_api_key):
-                return self._account_form("Enter the Remote PIN or disable daily updates.")
-        else:
-            self._remote_url = ""
-            self._remote_api_key = ""
-
         if existing and not re_pair and control and existing.ps_device.get("profiles"):
             # Updating schedules, token, and metadata must not trigger DDP discovery
             # and a second eight-digit pairing code for the same console.
@@ -305,11 +204,6 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 npsso=self._npsso,
                 psn_account_id=self._account_id,
                 launch_device_id=self._launch_device_id,
-                game_refresh_enabled=self._game_refresh_enabled,
-                game_refresh_time=self._game_refresh_time,
-                game_refresh_timezone=self._game_refresh_timezone,
-                remote_url=self._remote_url,
-                remote_api_key=self._remote_api_key,
             )
 
         if not control:
@@ -318,42 +212,24 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             return replace(
                 existing, npsso=self._npsso, psn_account_id=self._account_id,
                 launch_device_id=self._launch_device_id,
-                game_refresh_enabled=self._game_refresh_enabled,
-                game_refresh_time=self._game_refresh_time,
-                game_refresh_timezone=self._game_refresh_timezone,
-                remote_url=self._remote_url, remote_api_key=self._remote_api_key,
             ) if existing else PSNConfig(
                 identifier="psn_" + self._account_id.replace("/", "_").replace("+", "_").replace("=", ""),
                 name=self._psn_name,
                 npsso=self._npsso,
                 psn_account_id=self._account_id,
                 launch_device_id=self._launch_device_id,
-                game_refresh_enabled=self._game_refresh_enabled,
-                game_refresh_time=self._game_refresh_time,
-                game_refresh_timezone=self._game_refresh_timezone,
-                remote_url=self._remote_url,
-                remote_api_key=self._remote_api_key,
             )
 
         # Only a new PS5 (or explicit re-pair) needs discovery and the PIN.
         self._pending_device_config = replace(
             existing, npsso=self._npsso, psn_account_id=self._account_id,
             launch_device_id=self._launch_device_id,
-            game_refresh_enabled=self._game_refresh_enabled,
-            game_refresh_time=self._game_refresh_time,
-            game_refresh_timezone=self._game_refresh_timezone,
-            remote_url=self._remote_url, remote_api_key=self._remote_api_key,
         ) if existing else PSNConfig(
             identifier="ps5_pending",
             name=self._psn_name,
             npsso=self._npsso,
             psn_account_id=self._account_id,
             launch_device_id=self._launch_device_id,
-            game_refresh_enabled=self._game_refresh_enabled,
-            game_refresh_time=self._game_refresh_time,
-            game_refresh_timezone=self._game_refresh_timezone,
-            remote_url=self._remote_url,
-            remote_api_key=self._remote_api_key,
         )
         self._step = "select"
         return await self._selection_form()
@@ -453,11 +329,4 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             console_name=str(credentials.get("host_name") or (existing.console_name if existing else "")),
             psn_account_id=self._account_id or (existing.psn_account_id if existing else ""),
             library_view=existing.library_view if existing else "installed_games",
-            game_refresh_enabled=self._game_refresh_enabled,
-            game_refresh_time=self._game_refresh_time,
-            game_refresh_timezone=self._game_refresh_timezone,
-            game_refresh_last_date=existing.game_refresh_last_date if existing else "",
-            game_refresh_page_ids=list(existing.game_refresh_page_ids) if existing else [],
-            remote_url=self._remote_url if self._game_refresh_enabled else "",
-            remote_api_key=self._remote_api_key if self._game_refresh_enabled else "",
         )
