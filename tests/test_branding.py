@@ -18,7 +18,7 @@ class PS5ConnectBrandingTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         build_script = (ROOT / "build.sh").read_text(encoding="utf-8")
         ci = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
-        self.assertTrue(readme.startswith("# PS5 Connect\\n"))
+        self.assertEqual(readme.splitlines()[0], "# PS5 Connect")
         for content in (readme, build_script, ci):
             self.assertIn(ARCHIVE, content)
             self.assertNotIn("uc-intg-ps5-control-aarch64.tar.gz", content)
