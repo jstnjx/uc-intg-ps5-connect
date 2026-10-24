@@ -36,6 +36,12 @@ class PSNAccount(PollingDevice):
         self._next_psn_poll = 0.0
         self._total_game_count: int | None = None
         self._recent_art: dict[str, dict[str, str]] = {}
+        self._game_icons: dict[str, str] = {}
+        self._game_ui_lock = asyncio.Lock()
+        self._game_ui_signature: str | None = None
+        self._latest_game_pages: list = []
+        self._library_refresh_task: asyncio.Task | None = None
+        self._library_retry_after = 0.0
         self._game_details: dict[str, dict] = {}
         self._details_lock = asyncio.Lock()
         self.trophy_summary: dict[str, int] | None = None
@@ -418,23 +424,88 @@ class PSNAccount(PollingDevice):
         ]
         return pages, len(self._installed_titles)
 
-    async def _publish_game_remote(self) -> None:
-        """Advertise a named game library after Sony metadata is populated.
-
-        UC user_interface is initial configuration, not a runtime attribute;
-        refreshing installed titles cannot overwrite a user's customized UI.
-        """
+    async def _publish_game_remote(self, *, force: bool = False) -> None:
+        """Create SVG-backed available UI and refresh in-memory command routing."""
         if not self.driver or not self._installed_titles or not self.can_launch_games:
             return
-        try:
-            from game_remote import PS5GameLibraryRemote
+        import hashlib
+        import json
+        from game_artwork import build_game_icons
+        from game_remote import PS5GameLibraryRemote, make_game_pages
+
+        snapshot = [
+            (row["title_id"], self._recent_art.get(row["title_id"], {}))
+            for row in self._installed_titles
+        ]
+        signature = hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
+        if not force and signature == self._game_ui_signature:
+            return
+        async with self._game_ui_lock:
+            if not force and signature == self._game_ui_signature:
+                return
+            if force:
+                self._game_icons.clear()
+            self._game_icons = await asyncio.to_thread(
+                build_game_icons, self._installed_titles, self._recent_art, self._game_icons,
+            )
+            pages, commands = make_game_pages(
+                self._installed_titles, self._recent_art, self._game_icons,
+            )
+            if not pages:
+                return
             identifier = f"remote.{self.identifier}_game_library"
+            for collection in (
+                self.driver.api.available_entities,
+                self.driver.api.configured_entities,
+            ):
+                previous = collection.get(identifier)
+                if isinstance(previous, PS5GameLibraryRemote):
+                    previous.refresh_layout(pages, commands)
             if not self.driver.api.available_entities.contains(identifier):
                 self.driver.add_entity(PS5GameLibraryRemote(self._device_config, self))
-        except ValueError:
-            return
-        except Exception:
-            _LOG.debug("[%s] Game library registration failed", self.log_id, exc_info=True)
+            self._latest_game_pages = pages
+            self._game_ui_signature = signature
+
+    async def _refresh_game_library_at_schedule(self) -> None:
+        """Catch up after the scheduled time, no more than once per local day."""
+        from game_refresh import update_core_library_pages, refresh_date
+        now = asyncio.get_running_loop().time()
+        try:
+            if not self._psn or not self.driver:
+                return
+            if not await self.refresh_installed_titles(force=True):
+                return
+            self._metadata_expiry = 0.0
+            if self._metadata_task and not self._metadata_task.done():
+                await asyncio.shield(self._metadata_task)
+            else:
+                await self._enrich_installed_titles()
+            await self._publish_game_remote(force=True)
+            if not self._latest_game_pages:
+                return
+            config = self._config_manager.get(self.identifier)
+            if not config:
+                return
+            identifier = f"remote.{self.identifier}_game_library"
+            ids = await update_core_library_pages(config, identifier, self._latest_game_pages)
+            if not ids:
+                return
+            config.game_refresh_page_ids = ids
+            config.game_refresh_last_date = refresh_date(config)
+            if not self._config_manager.update(config):
+                raise RuntimeError("Could not persist PS5 library refresh date")
+            self._device_config.game_refresh_page_ids = ids
+            self._device_config.game_refresh_last_date = config.game_refresh_last_date
+            _LOG.info("[%s] Game Library Remote refreshed for %s", self.log_id,
+                      config.game_refresh_last_date)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _LOG.warning("[%s] Scheduled game grid refresh failed: %s",
+                         self.log_id, type(exc).__name__)
+        finally:
+            # Prevent a failed Core request being retried every 10 seconds.
+            self._library_retry_after = asyncio.get_running_loop().time() + 3600
 
     async def get_game_details(self, title_id: str) -> dict:
         """Look up real PSN playtime and timestamps for the selected game."""
@@ -572,6 +643,13 @@ class PSNAccount(PollingDevice):
         await self.poll_device()
 
     async def disconnect(self) -> None:
+        if self._library_refresh_task and not self._library_refresh_task.done():
+            self._library_refresh_task.cancel()
+            try:
+                await self._library_refresh_task
+            except asyncio.CancelledError:
+                pass
+        self._library_refresh_task = None
         if self._trophy_task and not self._trophy_task.done():
             self._trophy_task.cancel()
             try:
@@ -712,6 +790,15 @@ class PSNAccount(PollingDevice):
             and (self._inventory_task is None or self._inventory_task.done())
         ):
             self._inventory_task = asyncio.create_task(self.refresh_installed_titles())
+        if self._config_manager and self.can_launch_games:
+            from game_refresh import due_for_refresh
+            cfg = self._config_manager.get(self.identifier)
+            if (cfg and due_for_refresh(cfg) and now >= self._library_retry_after
+                    and (self._library_refresh_task is None or self._library_refresh_task.done())):
+                self._library_retry_after = now + 3600
+                self._library_refresh_task = asyncio.create_task(
+                    self._refresh_game_library_at_schedule()
+                )
         self.push_update()
 
     async def get_game_library(self, limit: int = 10, offset: int = 0) -> tuple[list, int | None]:
