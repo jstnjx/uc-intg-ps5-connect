@@ -1,13 +1,13 @@
 {
   "driver_id": "ps5_control_driver",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "min_core_api": "0.20.0",
   "name": {
     "en": "PlayStation 5 Control + PSN"
   },
   "icon": "uc:gamepad-modern",
   "description": {
-    "en": "PS5 control, scheduled 85px SVG game library, trophies, game detail and direct launching."
+    "en": "PS5 control, SVG game library, trophies and optional daily refresh with improved setup."
   },
   "developer": {
     "name": "jstnjx",

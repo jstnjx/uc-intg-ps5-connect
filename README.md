@@ -45,7 +45,7 @@ an SVG title fallback when Sony's metadata is missing. This uses the same
 technique as [UC Custom Select](https://github.com/jstnjx/uc-intg-custom-select)
 and stock [remote-ui](https://github.com/unfoldedcircle/remote-ui).
 
-**Automatic updates:** During setup, enable the daily game-library refresh
+**Automatic updates:** Daily game-library regeneration is optional and can be enabled during setup. When enabled, it runs at 03:00 Europe/Berlin by default (configurable). During setup, enable the daily game-library refresh
 (default: **03:00 Europe/Berlin**) and enter the Remote address and **Web
 Configurator PIN**. The PIN creates a dedicated Core API key, which is saved
 in integration configuration; the PIN itself is not stored. Daily refresh
@@ -53,8 +53,9 @@ loads the latest installed games, regenerates artwork and updates the
 existing Remote's generated `games_*` pages through Core REST. The entity does
 not need to be removed and re-added. User-created pages are preserved.
 If Core is unreachable, the integration retries later rather than deleting
-pages. Existing installations must complete setup again to supply the
-Core authentication details needed for automatic updates.
+pages. The Remote address and Web Configurator PIN are **not required** for
+regular PS5 control, pairing or PSN browsing. Enter them only if you enable
+automatic daily game-library updates.
 
 **Select controls:** The Profile and Library View entities explicitly publish
 their options on connection and subsequent state updates. The Profile selector
@@ -64,9 +65,11 @@ always includes the currently paired user.
 
 1. Download **`uc-intg-ps5-control-aarch64.tar.gz`** from the [latest release](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build workflow](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
 2. Open the Remote web configurator and go to **Settings → Integrations → Upload custom integration**. Upload the `.tar.gz` archive.
-3. Start setup and enter your **PSN token (NPSSO)**. Alternatively, enter your **PSN Account ID** for local control only. To enable automatic game-grid updates, enter the Remote Web Configurator PIN and choose a daily refresh time (default 03:00).
+3. Start setup and enter your **PSN token (NPSSO)**. Alternatively, enter your **PSN Account ID** for local control only. **Daily game-library updates are optional**: enable them and enter the Remote address and Web Configurator PIN only if desired.
 4. Select your PS5. If it is not listed, choose **Enter IP address manually**.
 5. On the PS5, open **Settings → System → Remote Play → Link Device**. Enter the displayed eight-digit PIN to finish pairing.
+
+**Changing settings later:** Choose **Update information for selected device** in integration setup. Previously saved PSN credentials and pairing are reused; enter only the fields you want to change. Enable **Re-pair PS5** only when you actually need to register Remote Play again. No second console discovery or pairing PIN is needed for routine edits.
 
 Make sure **Enable Remote Play** is turned on in your PS5 settings. For waking the console from Rest Mode, enable **Stay Connected to the Internet** and **Enable Turning On PS5 from Network** in Rest Mode settings.
 
