@@ -18,11 +18,11 @@ The Remote itself performs LAN Remote Play registration, session management, but
 | Console's local online/offline status | ✓ | — |
 | Current game title, platform and cover art | — | ✓ |
 | Played-game library browsing | — | ✓ |
-| Game launch by title ID (retail PS5) | — | Research only, no verified transport |
+| Direct PSN title-ID game launching | — | ✓ (new in v0.4.0; pending hardware validation) |
 | PSN authentication health sensor | — | ✓ |
 | Power switch + media player entities | ✓ | Optional |
 
-Streaming apps may not reliably report their titles to PSN. **Direct game launching is not yet supported.** The Android PXPlay 8.1.1 build does not expose the feature implemented by PXPlay PC 3.x; see [research notes](docs/game-launch-research.md).
+Streaming apps may not reliably report their titles to PSN. Game launching sends the retail PS5 a Sony cloud-assisted navigation command and waits for confirmation. This path has been reverse-engineered and unit-tested, but not yet validated on a physical console.
 
 ## PS5 Remote Play protocol compatibility
 
@@ -68,17 +68,34 @@ If you don't supply NPSSO, provide Account ID and pair normally. PSN-dependent f
 
 Simple commands also include `SESSION_DISCONNECT` (suspends for two minutes) and `SESSION_RECONNECT`. Disconnecting the session can be necessary to access certain PS5 settings that Remote Play locks out.
 
-## Direct game-launch investigation
+## Launch PS5 games directly by title
 
-Direct game launching on retail PS5 consoles is technically supported by Sony's
-PlayStation App and PXPlay **PC** 3.x. The provided PXPlay Android 8.1.1 APK
-contains PSN discovery and Remote Play signaling, but no confirmed title-ID
-launch request. For details, see [game-launch research](docs/game-launch-research.md).
+Version 0.4.0 implements the **Sony cloud-assisted navigation launch-title
+protocol** recovered from the user-provided signed PXPlay Linux v3.1.1 build.
+It launches by title ID, **not** by home-screen navigation, and requires no
+third-party daemon, macro, streaming UI or jailbreak.
 
-The integration intentionally exposes **browse-only** PSN game entries until
-there is a validated network request, authentication scheme, console ID format
-and positive on-console launch test. A layout-dependent controller macro was
-added experimentally in v0.3.0 and removed because it is unreliable.
+1. Pair the PS5 as usual and configure your NPSSO PSN token.
+2. On the Remote media player, open **Played games**.
+3. Select a title and press **Play**. The integration discovers the console's
+   PSN `duid`, requests `launchTitle` and polls Sony's command status.
+4. Sony must return `completed` before the integration reports success.
+   A failed, invalid or timed-out command returns an error (and is logged).
+
+For accounts with exactly one PS5, the target is selected automatically. If
+the account has several PS5 consoles, the integration matches the console's
+local DDP hostname against PSN device names; if no unique match is found it
+**refuses** to launch anything to avoid targeting the wrong console. The
+optional **PSN console device ID** setup field pins a specific PSN DUID.
+
+Supported game IDs look like `PPSA28183_00` or `CUSA00605_00`; Sony
+requires the base ID without the `_00` suffix. Games must actually be
+installed on the target console. The running account needs appropriate access.
+
+**Testing status:** request structure and error/status logic have offline unit
+tests, but Sony may change undocumented API behavior, and the flow has **not
+yet been tested on the user's physical PS5**. See
+[research and protocol details](docs/game-launch-research.md).
 
 ## How local control works
 

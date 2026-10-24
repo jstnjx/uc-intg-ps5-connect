@@ -10,6 +10,7 @@ from typing import Any
 
 from const import PSNConfig
 from controller import BUTTONS
+from game_launch import GameLaunchError, ConsoleSelectionError, GameLaunchTimeout
 from psn import PSNAccount
 from ucapi import StatusCodes, media_player
 from ucapi.api_definitions import Pagination, Paging
@@ -42,6 +43,8 @@ class PSNMediaPlayer(MediaPlayerEntity):
         features = []
         if device.has_psn:
             features.append(media_player.Features.BROWSE_MEDIA)
+        if device.can_launch_games:
+            features.append(media_player.Features.PLAY_MEDIA)
         if device.has_control:
             features += [
                 media_player.Features.ON_OFF,
@@ -82,6 +85,28 @@ class PSNMediaPlayer(MediaPlayerEntity):
         self, cmd_id: str, params: dict[str, Any] | None = None, *, websocket: Any
     ) -> StatusCodes:
         params = params or {}
+        if cmd_id == media_player.Commands.PLAY_MEDIA:
+            if not self._device.can_launch_games:
+                return StatusCodes.NOT_IMPLEMENTED
+            media_id = params.get(media_player.Attributes.MEDIA_ID) or params.get("media_id")
+            if not media_id:
+                return StatusCodes.BAD_REQUEST
+            try:
+                return (
+                    StatusCodes.OK if await self._device.launch_game(str(media_id))
+                    else StatusCodes.SERVER_ERROR
+                )
+            except ConsoleSelectionError as exc:
+                _LOG.warning("Game launch needs console selection: %s", exc)
+                return StatusCodes.CONFLICT
+            except (GameLaunchError, GameLaunchTimeout) as exc:
+                _LOG.warning("Game launch failed: %s", exc)
+                return StatusCodes.SERVICE_UNAVAILABLE
+            except ValueError:
+                return StatusCodes.BAD_REQUEST
+            except Exception:
+                _LOG.exception("Unexpected direct PSN title launch error")
+                return StatusCodes.SERVER_ERROR
         if not self._device.has_control:
             return StatusCodes.SERVICE_UNAVAILABLE
         try:
@@ -131,7 +156,7 @@ class PSNMediaPlayer(MediaPlayerEntity):
                 if game.last_played_date_time else None,
                 media_class=media_player.MediaClass.GAME,
                 can_browse=False,
-                can_play=False,
+                can_play=self._device.can_launch_games,
                 thumbnail=str(game.image_url) if game.image_url else None,
             )
             for game in titles

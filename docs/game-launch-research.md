@@ -1,74 +1,83 @@
-# Retail PS5 title-ID launching — interoperability research
+# Sony PS5 direct title launching — verified protocol reconstruction
 
-Last reviewed: 2026-10-24.
+Research date: 2026-10-24. Based on user-supplied signed
+PXPlay **Linux v3.1.1** AppImage. The AppImage detached signature validated
+against the archive's bundled PGP key (fingerprint
+8F03361B10CEAC9FDA4D0D7A67F350DD52D2A789). This verifies that the
+archive matches that key; it does not independently establish key ownership.
 
-## Requirement
+## Why this works
 
-Launch a specified game by its PS5/PS4 title identifier using an authenticated
-network request from the Unfolded Circle Remote, independent of home-screen
-position. Do not require jailbreaking, an external daemon or video decoding.
-The existing local Remote Play setup, controller navigation and PSN game
-library already work and must remain unchanged.
+The desktop application's `remoteplaylib-1.0.0-optimized.jar` exposes a
+`PsnApiUtil.launchTitleOnConsole` method. Static Java bytecode inspection
+established the concrete request shape, endpoint, title-ID normalization,
+command ID and status polling semantics. No proprietary code was copied
+into this repository and no binary/source archive is redistributed.
 
-## Findings
+### Command submission
 
-1. **Sony PlayStation App** officially supports **Game Library → Purchased →
-   Play on Console** for downloaded titles on a paired PS5.
-   https://www.playstation.com/en-us/support/games/playstation-app-features/
-2. **PXPlay PC v3.0.0+**, not Android v8.1.1, explicitly documents direct
-   launching of recently played games and a `--title-id` argument.
-   The PC 3.1.0 notes describe title launch after a PS5 login PIN is supplied.
-   https://github.com/streamingdv/PSPlay-Application-Hosting/releases
-3. User-provided **PXPlay Android v8.1.1** decompiled APK examined locally
-   (Java, Smali and arm64 native libraries; neither binary nor its decompiled
-   source is redistributed in this repository). Findings:
-   - `sources/defpackage/ku3.java`: calls
-     `GET https://m.np.playstation.com/api/gamelist/v2/users/me/titles`
-     to obtain a *recently played game* including artwork. This is read-only.
-   - `sources/defpackage/po4.java`: authenticates a PSN push WebSocket,
-     creates a remotePlaySession and calls
-     `POST https://web.np.playstation.com/api/cloudAssistedNavigation/v2/users/me/commands`.
-     The observed command uses `commandType: "remotePlay"`, destination
-     `"SQS"`, the PSN console `duid`, and a `parameters.initialParams`
-     string containing the PSN account ID, Remote Play session ID, client
-     platform and encrypted negotiation data.
-     This is a **Remote Play join command**, *not a game-launch request*.
-   - Searches across decompiled Java, Smali and ARM64 native libraries
-     did not reveal a game-launch-specific command/payload, including no
-     `psgm:play`, `playOnConsole`, `launchGame` or `launchTitle` marker.
-     Absence of these markers is not absolute proof that no obfuscated
-     implementation exists.
-4. PS5 DevWiki documents the **console-internal URI**
-   `psgm:play?id=<titleId>` for launching an installed game.
-   This is not an authenticated PSN HTTP endpoint and cannot just be sent to
-   the PS5 over the network:
-   https://www.psdevwiki.com/ps5/URI
-5. AnyPS5 is an executable relinker for Windows/Linux. It is not a retail-PS5
-   remote-control client: https://github.com/boykopovar/AnyPS5
-6. Jailbroken PS5 launcher APIs using `sceLncUtilLaunchApp` and payloads
-   are not suitable for normal retail consoles.
+```http
+POST https://web.np.playstation.com/api/cloudAssistedNavigation/v2/users/me/commands
+Authorization: Bearer <PSN OAuth access token>
+Accept: application/json
+Content-Type: application/json; charset=utf-8
 
-## Implementation status
+{
+  "commandDetail": {
+    "platform": "PS5",
+    "duid": "<PSN console DUID>",
+    "commandType": "launchTitle",
+    "parameters": {
+      "titleIds": ["PPSA28183"]
+    }
+  }
+}
+```
 
-**No verified direct title-launch transport has been identified.** Therefore
-we do NOT enable PLAY_MEDIA, set can_play on game-list entries, or send a
-hypothetical Sony `commandType` to a live PSN account. Previously introduced
-recorded UI-navigation macros have been removed (v0.3.1). Existing PSN
-authentication and Remote Play button controls remain unchanged.
+The PSN game's `_00` suffix is stripped, as in the reference client.
+A successful submission returns `commandId`. HTTP 2xx **alone is not
+success**.
 
-## What would unblock real implementation
+### Command status
 
-Inspect PXPlay **PC** v3.x's game-launch network request (not the Android APK)
-or the official PlayStation App's **Play on Console** request for an account
-and console you control. Confirm:
+```http
+GET https://web.np.playstation.com/api/cloudAssistedNavigation/v2/users/me/commands?platform=PS5&commandIds=<id>&includeFields=actions%2CcommandDetail&commandStatus=executing%2Ccompleted
+Authorization: Bearer <PSN OAuth access token>
+```
 
-- HTTP endpoint, method, request body (including title identifier format),
-  authentication type, required headers and console `duid`;
-- whether launch uses cloud-assisted navigation or a different PSN service;
-- whether Remote Play session negotiation and PSN login PIN are prerequisites;
-- response semantics and confirmation by checking the running app on PS5.
+A `commands[0]`, `command` or top-level result contains `commandStatus`,
+`commandResult` and `actions[0].action` (optionally). The reference
+client checks for `completed` vs `failed`, polling approximately every
+1.5 seconds for up to 10 seconds. This integration uses up to 12 seconds.
 
-Only then implement a typed per-title launcher, with explicit errors, no
-assumption that HTTP acceptance means game start, and unit tests with
-redacted request fixtures. Never commit PSN tokens, pairing keys or private
-traffic captures.
+### PSN console discovery
+
+```http
+GET https://web.np.playstation.com/api/cloudAssistedNavigation/v2/users/me/clients?platform=PS5&includeFields=device&limit=10&offset=0
+Authorization: Bearer <PSN OAuth access token>
+```
+
+Response `clients` contain `duid`, `platform`, and `device.name`. The
+integration refuses to auto-select when multiple PS5s are present and the
+local console name cannot be uniquely matched, unless an explicit DUID is
+configured.
+
+### OAuth
+
+The desktop client uses the Sony mobile OAuth application ID
+`09515159-7237-4370-9b40-3806e67c0891`, scope
+`psn:mobile.v2.core psn:clientapp`, which matches the existing
+PSNAWP account session in this integration. No second sign-in is needed.
+
+## Implementation
+
+The independent Python client is `intg-ps5/game_launch.py`. The existing
+`PSNAccount` uses its refresh-aware PSNAWP authenticator, and the media-player
+exposes `PLAY_MEDIA` and `can_play` on game entries. There are no controller
+macros, jailbreak APIs or additional helper daemons.
+
+The request format has been confirmed **statically** from the supplied
+desktop distribution. Success on the user's retail PS5 has **not yet been
+established** and must be tested. Game availability/installation, PSN account
+entitlements, login state and Sony API changes can affect the outcome.
+Never commit NPSSO cookies, Sony OAuth tokens or paired-console credentials.

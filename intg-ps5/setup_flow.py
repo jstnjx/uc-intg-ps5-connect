@@ -73,6 +73,7 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         self._psn_name = "PlayStation 5"
         self._host = ""
         self._step = ""
+        self._launch_device_id = ""
 
     def get_manual_entry_form(self) -> RequestUserInput:
         return self._account_form()
@@ -93,12 +94,25 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
              "field": {"text": {"value": ""}}},
             {"id": "add_control", "label": {"en": "Pair PS5 for local navigation and power"},
              "field": {"checkbox": {"value": True}}},
+            _label(
+                "If your PSN account has multiple PS5 consoles, provide this console's "
+                "PSN device DUID to avoid starting a game on the wrong console. "
+                "Leave blank if the account has only one PS5.",
+                "launch_duid_help",
+            ),
+            {"id": "launch_device_id", "label": {"en": "PSN console device ID (optional)"},
+             "field": {"text": {"value": self._launch_device_id}}},
         ]
         return _form("PlayStation 5 account", fields)
 
     async def query_device(self, input_values: dict[str, Any]):
         token_value = str(input_values.get("npsso") or "").strip()
         account_value = str(input_values.get("account_id") or "").strip()
+        self._launch_device_id = str(input_values.get("launch_device_id") or "").strip()
+        if self._launch_device_id and (
+            len(self._launch_device_id) < 8 or len(self._launch_device_id) > 256
+        ):
+            return self._account_form("Invalid PSN console device ID.")
         control = input_values.get("add_control", True)
         control = control is True or str(control).lower() in ("true", "1", "on")
         if not token_value and not account_value:
@@ -146,6 +160,7 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 name=self._psn_name if self._npsso else existing.name,
                 npsso=self._npsso or (existing.npsso if existing else ""),
                 ps_device=dict(existing.ps_device) if existing else {},
+                launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
             )
         self._pending_device_config = PSNConfig(
             identifier="ps5_pending",
@@ -230,4 +245,5 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             name=self._psn_name if self._psn_name != "PlayStation 5" else f"PlayStation 5 ({host})",
             npsso=self._npsso or (existing.npsso if existing else ""),
             ps_device=credentials,
+            launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
         )

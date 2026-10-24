@@ -13,6 +13,7 @@ from typing import Any
 from api import PlayStationNetwork, PlayStationNetworkData
 from const import PSNConfig
 from controller import PS5Controller
+from game_launch import SonyGameLauncher, GameLaunchError, ConsoleSelectionError, GameLaunchTimeout
 from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 from ucapi import media_player
 from ucapi_framework.device import PollingDevice
@@ -28,6 +29,7 @@ class PSNAccount(PollingDevice):
         self._psn: PlayStationNetwork | None = None
         self._psn_data: PlayStationNetworkData | None = None
         self._control: PS5Controller | None = None
+        self._launcher = SonyGameLauncher()
         self._connect_lock = asyncio.Lock()
         self._next_psn_poll = 0.0
         self._total_game_count: int | None = None
@@ -65,6 +67,27 @@ class PSNAccount(PollingDevice):
     @property
     def has_psn(self) -> bool:
         return bool(self._device_config.npsso)
+
+    @property
+    def can_launch_games(self) -> bool:
+        return self.has_control and self.has_psn
+
+    async def launch_game(self, title_id: str) -> bool:
+        if not self.can_launch_games or not self._psn or self.psn_authenticated is not True:
+            raise GameLaunchError("PSN account and paired PS5 are required for launching games")
+        local_name = ""
+        if self._control:
+            try:
+                status = self._control.device.status or {}
+                local_name = str(status.get("host-name") or "")
+            except (AttributeError, TypeError):
+                pass
+        return await self._launcher.launch(
+            authenticator=self._psn.psn.authenticator,
+            title_id=title_id,
+            duid=self._device_config.launch_device_id,
+            local_name=local_name,
+        )
 
     @property
     def device_type(self) -> str:
