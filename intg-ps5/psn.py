@@ -413,6 +413,103 @@ class PSNAccount(PollingDevice):
         ]
         return pages, len(self._installed_titles)
 
+    async def _publish_game_remote(self) -> None:
+        """Advertise a named game library after Sony metadata is populated.
+
+        UC user_interface is initial configuration, not a runtime attribute;
+        refreshing installed titles cannot overwrite a user's customized UI.
+        """
+        if not self.driver or not self._installed_titles or not self.can_launch_games:
+            return
+        try:
+            from game_remote import PS5GameLibraryRemote
+            identifier = f"remote.{self.identifier}_game_library"
+            if not self.driver.api.available_entities.contains(identifier):
+                self.driver.add_entity(PS5GameLibraryRemote(self._device_config, self))
+        except ValueError:
+            return
+        except Exception:
+            _LOG.debug("[%s] Game library registration failed", self.log_id, exc_info=True)
+
+    async def get_game_details(self, title_id: str) -> dict:
+        """Look up real PSN playtime and timestamps for the selected game."""
+        title_id = normalize_title_id(title_id)
+        if title_id in self._game_details:
+            return dict(self._game_details[title_id])
+        async with self._details_lock:
+            if title_id in self._game_details:
+                return dict(self._game_details[title_id])
+            result = {
+                "title_id": title_id, "name": "", "image": "",
+                "playtime": None, "play_count": None,
+                "first_played": None, "last_played": None,
+            }
+            if self._psn:
+                try:
+                    def stats():
+                        return list(islice(self._psn.client.title_stats(page_size=100), 800))
+                    for item in await asyncio.to_thread(stats):
+                        try:
+                            key = normalize_title_id(item.title_id)
+                        except (ValueError, AttributeError):
+                            continue
+                        if key != title_id:
+                            continue
+                        duration = getattr(item, "play_duration", None)
+                        result.update(
+                            name=clean_game_title(getattr(item, "name", "")),
+                            image=str(getattr(item, "image_url", "") or ""),
+                            playtime=int(duration.total_seconds()) if duration is not None else None,
+                            play_count=getattr(item, "play_count", None),
+                            first_played=getattr(item, "first_played_date_time", None),
+                            last_played=getattr(item, "last_played_date_time", None),
+                        )
+                        break
+                except Exception:
+                    _LOG.debug("[%s] PSN playtime lookup failed", self.log_id)
+            cached = self._recent_art.get(title_id, {})
+            result["name"] = result["name"] or clean_game_title(cached.get("name"))
+            result["image"] = result["image"] or cached.get("image", "")
+            self._game_details[title_id] = result
+            return dict(result)
+
+    async def _refresh_trophies(self) -> None:
+        """Periodically refresh aggregate trophies and active-title progress."""
+        try:
+            if not self._psn:
+                return
+            summary = await asyncio.to_thread(self._psn.client.trophy_summary)
+            totals = summary.earned_trophies
+            self.trophy_summary = {
+                "level": int(summary.trophy_level),
+                "level_progress": int(summary.progress),
+                "platinum": int(totals.platinum),
+                "gold": int(totals.gold),
+                "silver": int(totals.silver),
+                "bronze": int(totals.bronze),
+            }
+            self.active_trophy_progress = None
+            active_id = self.psn_media_title_id
+            self._trophy_title_id = active_id
+            if active_id:
+                try:
+                    raw_id = normalize_title_id(active_id)
+                    trophies = await asyncio.to_thread(
+                        lambda: list(self._psn.client.trophy_titles_for_title([raw_id + "_00"]))
+                    )
+                    progress = next((row.progress for row in trophies
+                                     if row.progress is not None), None)
+                    self.active_trophy_progress = int(progress) if progress is not None else None
+                except Exception:
+                    _LOG.debug("[%s] Current-game trophies unavailable", self.log_id)
+            self.push_update()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOG.debug("[%s] Trophy summary unavailable", self.log_id, exc_info=True)
+        finally:
+            self._trophy_expiry = asyncio.get_running_loop().time() + 1800
+
     async def launch_game(self, title_id: str) -> bool:
         if not self.can_launch_games:
             raise GameLaunchError("PSN account and paired PS5 are required for launching games")
@@ -470,6 +567,14 @@ class PSNAccount(PollingDevice):
         await self.poll_device()
 
     async def disconnect(self) -> None:
+        if self._trophy_task and not self._trophy_task.done():
+            self._trophy_task.cancel()
+            try:
+                await self._trophy_task
+            except asyncio.CancelledError:
+                pass
+        self._trophy_task = None
+
         if self._metadata_task and not self._metadata_task.done():
             self._metadata_task.cancel()
             try:
@@ -586,6 +691,10 @@ class PSNAccount(PollingDevice):
                 pass
             if self.psn_media_title:
                 self.psn_state = media_player.States.PLAYING
+        if self._psn and self.psn_authenticated is True and now >= self._trophy_expiry:
+            if self._trophy_task is None or self._trophy_task.done():
+                self._trophy_expiry = now + 1800
+                self._trophy_task = asyncio.create_task(self._refresh_trophies())
         self._state = str(self.psn_state)
         if (
             self._psn and self.psn_authenticated is True
