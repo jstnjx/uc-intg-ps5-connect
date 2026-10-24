@@ -21,6 +21,16 @@ from ucapi_framework import BaseConfigManager, BaseIntegrationDriver, get_config
 class PS5IntegrationDriver(BaseIntegrationDriver):
     """Resolve multiple sensors and selectors to their configured PS5."""
 
+    async def on_device_connected(self, device_id: str) -> None:
+        await super().on_device_connected(device_id)
+        # The framework intentionally skips coordinator-style entities here.
+        # Select widgets need a fresh options/current_option state message after
+        # subscription, not just the initial available-entities description.
+        for entity_id in self.get_entity_ids_for_device(device_id):
+            entity = self.api.configured_entities.get(entity_id)
+            if isinstance(entity, (PS5ProfileSelect, PS5LibraryViewSelect)):
+                await entity.sync_state()
+
     def device_from_entity_id(self, entity_id: str) -> str | None:
         parsed = super().device_from_entity_id(entity_id)
         return resolve_device_id(
