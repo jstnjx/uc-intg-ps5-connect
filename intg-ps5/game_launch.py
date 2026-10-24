@@ -26,6 +26,10 @@ class GameLaunchError(RuntimeError):
     """PSN launch rejected, unavailable, or not confirmed."""
 
 
+class PSNAuthorizationError(GameLaunchError):
+    """The PSN access token was rejected; caller may renew and retry once."""
+
+
 class ConsoleSelectionError(GameLaunchError):
     """No unambiguous PSN console device could be selected."""
 
@@ -61,7 +65,7 @@ def _headers() -> dict[str, str]:
 def _response_json(response, subject: str) -> dict:
     status = response.status_code
     if status in (401, 403):
-        raise GameLaunchError(f"PSN authorization rejected for {subject} (HTTP {status})")
+        raise PSNAuthorizationError(f"PSN authorization rejected for {subject} (HTTP {status})")
     if not 200 <= status < 300:
         raise GameLaunchError(f"PSN {subject} failed (HTTP {status})")
     try:
