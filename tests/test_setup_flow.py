@@ -37,6 +37,9 @@ class FakeBaseSetup:
     def selected_config_entry(self):
         return self.config.get(self._selected_config_id) if self._selected_config_id else None
 
+    async def handle_driver_setup(self, msg):
+        return msg
+
 
 class FakeRequestInput:
     def __init__(self, title, settings):
@@ -45,6 +48,14 @@ class FakeRequestInput:
 
 
 class FakeError:
+    pass
+
+
+class FakeStart:
+    pass
+
+
+class FakeAbort:
     pass
 
 
@@ -83,6 +94,7 @@ def setup_module():
         "ucapi": types.SimpleNamespace(
             IntegrationSetupError=types.SimpleNamespace(OTHER="other"),
             RequestUserInput=FakeRequestInput, SetupError=FakeError,
+            DriverSetupRequest=FakeStart, AbortDriverSetup=FakeAbort,
         ),
         "ucapi_framework": types.SimpleNamespace(BaseSetupFlow=FakeBaseSetup),
     }
@@ -124,6 +136,17 @@ class SetupFlowTests(unittest.IsolatedAsyncioTestCase):
         flow = SETUP.PSNSetupFlow(FakeConfigManager(config))
         flow._selected_config_id = config.identifier
         return flow, config
+
+    async def test_abandoned_setup_does_not_leak_pending_wizard_state(self):
+        flow, cfg = self.existing_flow()
+        flow._pending_device_config = cfg
+        flow._step = "pin"
+        flow._account_id = "1"
+        await flow.handle_driver_setup(FakeStart())
+        self.assertIsNone(flow._pending_device_config)
+        self.assertIsNone(flow._selected_config_id)
+        self.assertEqual(flow._step, "")
+        self.assertEqual(flow._account_id, "")
 
     def test_reconfigure_form_prefills_non_secret_settings(self):
         flow, cfg = self.existing_flow()
