@@ -14,6 +14,7 @@ from typing import Any
 
 from pyremoteplay import RPDevice
 from pyremoteplay.profile import Profiles, UserProfile
+from lan_identity import find_host_ip, normalize_host_id
 
 _LOG = logging.getLogger(__name__)
 BUTTONS = frozenset({
@@ -70,7 +71,10 @@ class PS5Controller:
         self.host = str(ipaddress.ip_address(credentials["device_ip"]))
         self.username = credentials.get("user") or "ps5-remote"
         self.profiles = Profiles(credentials["profiles"])
+        self._device_factory = device_factory
         self.device = device_factory(self.host)
+        self.host_id = str(credentials.get("host_id") or "").strip()
+        self._last_host_search = -1000.0
         self.idle_seconds = idle_seconds
         self._lock = asyncio.Lock()
         self._last_press = 0.0
@@ -89,7 +93,32 @@ class PS5Controller:
             return False
 
     async def status(self) -> dict[str, Any]:
-        result = await asyncio.to_thread(self.device.get_status)
+        try:
+            result = await asyncio.to_thread(self.device.get_status)
+        except (OSError, TimeoutError):
+            result = None
+        reported_id = normalize_host_id((result or {}).get("host-id"))
+        if result and self.host_id and reported_id and reported_id != normalize_host_id(self.host_id):
+            _LOG.warning("PS5 DDP host ID mismatch at %s; refusing reassignment", self.host)
+            result = None
+        if not result and self.host_id and not self.connected:
+            now = asyncio.get_running_loop().time()
+            if now - self._last_host_search >= 60:
+                self._last_host_search = now
+                try:
+                    found_ip = await asyncio.to_thread(find_host_ip, self.host_id)
+                    if found_ip and found_ip != self.host:
+                        candidate = self._device_factory(found_ip)
+                        verified = await asyncio.to_thread(candidate.get_status)
+                        if normalize_host_id((verified or {}).get("host-id")) == normalize_host_id(self.host_id):
+                            self.host = found_ip
+                            self.device = candidate
+                            result = verified
+                            _LOG.info("Reidentified paired PS5 at a new LAN address")
+                except (OSError, TimeoutError, ValueError):
+                    _LOG.debug("PS5 host-ID rediscovery unavailable", exc_info=True)
+        if result and not self.host_id:
+            self.host_id = str(result.get("host-id") or "").strip()
         self._last_state = result or {}
         return self._last_state
 
