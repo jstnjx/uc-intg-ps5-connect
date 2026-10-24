@@ -1,13 +1,13 @@
 {
   "driver_id": "ps5_control_driver",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "min_core_api": "0.20.0",
   "name": {
     "en": "PlayStation 5 Control + PSN"
   },
   "icon": "uc:gamepad-modern",
   "description": {
-    "en": "PS5 control, direct game launching, installed game/app library, persistent console identity and PSN recovery."
+    "en": "PlayStation 5 controller, game library, direct launching, sensors and selection controls."
   },
   "developer": {
     "name": "jstnjx",
@@ -22,12 +22,12 @@
       {
         "id": "info",
         "label": {
-          "en": "On-remote integration"
+          "en": "Setup"
         },
         "field": {
           "label": {
             "value": {
-              "en": "Pair directly with your PlayStation 5 using Remote Play. An optional NPSSO token unlocks PSN game and cover information. No external daemon is required."
+              "en": "Enter your PSN token or Account ID, then pair your PS5."
             }
           }
         }

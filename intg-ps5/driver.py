@@ -6,15 +6,20 @@ import os
 from const import PSNConfig
 from entity_ids import resolve_device_id
 from media_player import PSNMediaPlayer
+from remote_control import PS5Remote
+from selection import PS5ProfileSelect, PS5LibraryViewSelect
 from psn import PSNAccount
-from sensor import PSNAuthenticationSensor, PSNSensor, PSNInstalledCountSensor, PSNConnectionSensor
+from sensor import (
+    PSNAuthenticationSensor, PSNSensor, PSNInstalledCountSensor,
+    PSNConnectionSensor, PSNActiveTitleIdSensor, PSNAPISensor,
+)
 from setup_flow import PSNSetupFlow
 from switch import PSNSwitch
 from ucapi_framework import BaseConfigManager, BaseIntegrationDriver, get_config_path
 
 
 class PS5IntegrationDriver(BaseIntegrationDriver):
-    """Framework driver that understands the NPSSO sensor sub-entity suffix."""
+    """Resolve multiple sensors and selectors to their configured PS5."""
 
     def device_from_entity_id(self, entity_id: str) -> str | None:
         parsed = super().device_from_entity_id(entity_id)
@@ -32,7 +37,14 @@ async def main() -> None:
     )
     driver = PS5IntegrationDriver(
         device_class=PSNAccount,
-        entity_classes=[PSNMediaPlayer, PSNSwitch, PSNSensor, PSNAuthenticationSensor, PSNInstalledCountSensor, PSNConnectionSensor],
+        entity_classes=[
+            PSNMediaPlayer, PSNSwitch, PSNSensor, PSNAuthenticationSensor,
+            PSNInstalledCountSensor, PSNConnectionSensor,
+            PSNActiveTitleIdSensor, PSNAPISensor,
+            lambda cfg, dev: PS5Remote(cfg, dev) if dev.has_control else [],
+            lambda cfg, dev: PS5ProfileSelect(cfg, dev) if dev.has_control else [],
+            lambda cfg, dev: PS5LibraryViewSelect(cfg, dev) if dev.has_psn else [],
+        ],
         driver_id="ps5_control_driver",
     )
     driver.config_manager = BaseConfigManager(

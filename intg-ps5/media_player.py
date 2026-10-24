@@ -145,7 +145,7 @@ class PSNMediaPlayer(MediaPlayerEntity):
         if not self._device.has_psn or not self._device.psn_authenticated:
             return StatusCodes.SERVICE_UNAVAILABLE
         paging: Paging = options.paging
-        folder = options.media_id or "psn_library"
+        folder = options.media_id or self._device.library_view
 
         if folder == "psn_library":
             folders = [
