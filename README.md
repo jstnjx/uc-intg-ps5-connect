@@ -8,7 +8,8 @@ An [Unfolded Circle](https://www.unfoldedcircle.com/) Remote Two / Remote 3 inte
 - **Controls:** D-pad, face buttons, shoulders, PS, Options, Share, Touchpad, plus a native Remote entity with a controller layout and physical-button mappings.
 - **Game launching:** Launch games directly by PlayStation title ID through Sony's PSN command service.
 - **Game library:** Browse installed games and apps or recently played titles, with cleaned names and no subtitles. Enrich artwork from Sony's game list, trophy API and PlayStation Store when available.
-- **Game Library Remote:** Launch installed games from paged 4-column × 6-row native text-button layouts.
+- **Game Library Remote:** Launch installed games from 4-column × 6-row native Qt StyledText buttons, with centered 85×85 SVG covers.
+- **Scheduled refresh:** Automatically regenerate game pages every day (03:00 Europe/Berlin by default), updating the configured Remote in place through Core REST. Time and timezone are configurable during setup.
 - **Game details:** PSN playtime, play count, first played and last played dates when Sony reports them.
 - **Trophies:** Sensors for trophy level, total earned, platinum trophies and active-game completion percentage.
 - **Console identity:** Remember the paired console, account and PSN device ID; rediscover the same PS5 if its IP address changes.
@@ -36,12 +37,24 @@ The cache refreshes approximately every 15 minutes. Games without returned names
 or artwork cannot be identified reliably: the media browser uses a generic title
 and icon, with no subtitles. The title ID remains the internal launch identifier.
 
-**Game Library Remote layout:** Each page has 24 text-based launch buttons on a
-4×6 grid. It appears among available entities after the PSN installed inventory
-has loaded. UC Core keeps Remote user-interface pages as part of the configured
-entity, so remove and re-add this entity when you want to regenerate its pages
-after adding/removing games. UC's native Remote UI does not support embedded SVG
-inside text buttons or fixed 85×85-pixel SVG alignment.
+**Game Library Remote layout:** Each page has 24 native text buttons on a 4×6
+grid. The button strings contain Base64 SVG icons through Qt StyledText's
+`<img>` support; image size is **85×85 pixels**, centered in each button.
+Game-cover thumbnails are downscaled before being embedded in SVGs, with
+an SVG title fallback when Sony's metadata is missing. This uses the same
+technique as [UC Custom Select](https://github.com/jstnjx/uc-intg-custom-select)
+and stock [remote-ui](https://github.com/unfoldedcircle/remote-ui).
+
+**Automatic updates:** During setup, enable the daily game-library refresh
+(default: **03:00 Europe/Berlin**) and enter the Remote address and **Web
+Configurator PIN**. The PIN creates a dedicated Core API key, which is saved
+in integration configuration; the PIN itself is not stored. Daily refresh
+loads the latest installed games, regenerates artwork and updates the
+existing Remote's generated `games_*` pages through Core REST. The entity does
+not need to be removed and re-added. User-created pages are preserved.
+If Core is unreachable, the integration retries later rather than deleting
+pages. Existing installations must complete setup again to supply the
+Core authentication details needed for automatic updates.
 
 **Select controls:** The Profile and Library View entities explicitly publish
 their options on connection and subsequent state updates. The Profile selector
@@ -51,7 +64,7 @@ always includes the currently paired user.
 
 1. Download **`uc-intg-ps5-control-aarch64.tar.gz`** from the [latest release](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build workflow](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
 2. Open the Remote web configurator and go to **Settings → Integrations → Upload custom integration**. Upload the `.tar.gz` archive.
-3. Start setup and enter your **PSN token (NPSSO)**. Alternatively, enter your **PSN Account ID** for local control only.
+3. Start setup and enter your **PSN token (NPSSO)**. Alternatively, enter your **PSN Account ID** for local control only. To enable automatic game-grid updates, enter the Remote Web Configurator PIN and choose a daily refresh time (default 03:00).
 4. Select your PS5. If it is not listed, choose **Enter IP address manually**.
 5. On the PS5, open **Settings → System → Remote Play → Link Device**. Enter the displayed eight-digit PIN to finish pairing.
 
