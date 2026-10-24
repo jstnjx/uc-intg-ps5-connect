@@ -135,12 +135,14 @@ class PSNAccount(PollingDevice):
         if not self.has_psn:
             return False
         async with self._reauth_lock:
+            loop = asyncio.get_running_loop()
+            client = None
             try:
-                # Obtain event loop before entering the worker thread.
-                loop = asyncio.get_running_loop()
                 client = await asyncio.to_thread(PlayStationNetwork, self._device_config.npsso, loop)
                 await asyncio.to_thread(client.get_user)
             except Exception as exc:
+                if client is not None:
+                    await asyncio.to_thread(client.close)
                 _LOG.warning("[%s] PSN reauthentication unsuccessful: %s", self.log_id, type(exc).__name__)
                 self.psn_error = "PSN sign-in unavailable; update NPSSO if expired"
                 self.psn_authenticated = False
