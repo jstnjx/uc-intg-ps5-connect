@@ -11,7 +11,7 @@ from selection import PS5ProfileSelect, PS5LibraryViewSelect
 from psn import PSNAccount
 from sensor import (
     PSNAuthenticationSensor, PSNSensor, PSNInstalledCountSensor,
-    PSNConnectionSensor, PSNActiveTitleIdSensor, PSNAPISensor,
+    PSNConnectionSensor, PSNActiveTitleIdSensor, PSNAPISensor, PSNTrophySensor,
 )
 from setup_flow import PSNSetupFlow
 from switch import PSNSwitch
@@ -54,7 +54,7 @@ async def main() -> None:
             lambda cfg, dev: [
                 PSNTrophySensor(cfg, dev, kind)
                 for kind in PSNTrophySensor.TYPES
-            ] if dev.has_psn else [], PSNTrophySensor,
+            ] if dev.has_psn else [],
             lambda cfg, dev: PS5Remote(cfg, dev) if dev.has_control else [],
             lambda cfg, dev: PS5ProfileSelect(cfg, dev) if dev.has_control else [],
             lambda cfg, dev: PS5LibraryViewSelect(cfg, dev) if dev.has_psn else [],
