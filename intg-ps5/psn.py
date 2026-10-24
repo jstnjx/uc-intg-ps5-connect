@@ -13,7 +13,7 @@ from typing import Any
 from api import PlayStationNetwork, PlayStationNetworkData
 from const import PSNConfig
 from controller import PS5Controller
-from game_launch import SonyGameLauncher, GameLaunchError, ConsoleSelectionError, GameLaunchTimeout
+from game_launch import SonyGameLauncher, GameLaunchError, ConsoleSelectionError, GameLaunchTimeout, PSNAuthorizationError, normalize_title_id
 from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 from ucapi import media_player
 from ucapi_framework.device import PollingDevice
@@ -33,6 +33,19 @@ class PSNAccount(PollingDevice):
         self._connect_lock = asyncio.Lock()
         self._next_psn_poll = 0.0
         self._total_game_count: int | None = None
+        self._recent_art: dict[str, dict[str, str]] = {}
+        self._installed_titles: list[dict[str, str]] = []
+        self.installed_count: int | None = None
+        self.installed_inventory_available = False
+        self._inventory_expiry = 0.0
+        self._inventory_lock = asyncio.Lock()
+        self.psn_error = ""
+        self._psn_failures = 0
+        self._psn_retry_after = 0.0
+        self._reauth_lock = asyncio.Lock()
+        self.console_duid = device_config.launch_device_id
+        self.console_name = device_config.console_name
+        self.console_host_id = device_config.console_host_id
         self.psn_state = media_player.States.UNKNOWN
         self.psn_media_title = ""
         self.psn_media_artist = ""
@@ -72,22 +85,181 @@ class PSNAccount(PollingDevice):
     def can_launch_games(self) -> bool:
         return self.has_control and self.has_psn
 
-    async def launch_game(self, title_id: str) -> bool:
-        if not self.can_launch_games or not self._psn or self.psn_authenticated is not True:
-            raise GameLaunchError("PSN account and paired PS5 are required for launching games")
-        local_name = ""
+    def _local_console_name(self) -> str:
         if self._control:
             try:
                 status = self._control.device.status or {}
-                local_name = str(status.get("host-name") or "")
+                return str(status.get("host-name") or self.console_name or "")
             except (AttributeError, TypeError):
                 pass
-        return await self._launcher.launch(
-            authenticator=self._psn.psn.authenticator,
-            title_id=title_id,
-            duid=self._device_config.launch_device_id,
-            local_name=local_name,
-        )
+        return self.console_name or ""
+
+    def _save_identity(self, *, duid: str = "", name: str = "",
+                       host_id: str = "", account_id: str = "",
+                       ip: str = "") -> None:
+        """Persist only confirmed, non-conflicting identifiers to the same device."""
+        if not self._config_manager:
+            return
+        config = self._config_manager.get(self.identifier)
+        if config is None:
+            return
+        dirty = False
+        for attr, new in (
+            ("launch_device_id", duid), ("console_name", name),
+            ("console_host_id", host_id), ("psn_account_id", account_id),
+        ):
+            old = getattr(config, attr, "")
+            if new and old and old.casefold() != new.casefold() and attr != "console_name":
+                _LOG.warning("[%s] Console identity conflict for %s; retaining existing value", self.log_id, attr)
+                continue
+            if new and old != new:
+                setattr(config, attr, new)
+                setattr(self._device_config, attr, new)
+                dirty = True
+        if ip and config.ps_device.get("device_ip") != ip:
+            config.ps_device = {**config.ps_device, "device_ip": ip}
+            self._device_config.ps_device = config.ps_device
+            dirty = True
+        if dirty and not self._config_manager.update(config):
+            _LOG.warning("[%s] Failed to persist console identity", self.log_id)
+        self.console_duid = self._device_config.launch_device_id
+        self.console_name = self._device_config.console_name
+        self.console_host_id = self._device_config.console_host_id
+
+    async def _recover_psn(self) -> bool:
+        """Rebuild an expired/disconnected PSN session using stored NPSSO.
+
+        Only one recovery runs at a time. Local Remote Play remains unaffected.
+        """
+        if not self.has_psn:
+            return False
+        async with self._reauth_lock:
+            try:
+                def reconnect():
+                    client = PlayStationNetwork(self._device_config.npsso, asyncio.get_running_loop())
+                    return client
+                # Client constructor runs in a thread, but must receive the actual
+                # running event loop obtained outside that thread.
+                loop = asyncio.get_running_loop()
+                client = await asyncio.to_thread(PlayStationNetwork, self._device_config.npsso, loop)
+                await asyncio.to_thread(client.get_user)
+            except Exception as exc:
+                _LOG.warning("[%s] PSN reauthentication unsuccessful: %s", self.log_id, type(exc).__name__)
+                self.psn_error = "PSN sign-in unavailable; update NPSSO if expired"
+                self.psn_authenticated = False
+                self._psn_failures += 1
+                self._psn_retry_after = loop.time() + min(900, 60 * (2 ** min(self._psn_failures, 4)))
+                return False
+            previous = self._psn
+            self._psn = client
+            self.psn_authenticated = True
+            self.psn_error = ""
+            self._psn_failures = 0
+            self._psn_retry_after = 0.0
+            self._next_psn_poll = 0.0
+            if previous and previous is not client:
+                await asyncio.to_thread(previous.close)
+            return True
+
+    async def refresh_installed_titles(self, *, force: bool = False) -> bool:
+        """Load the per-console inventory; never conflate missing data and zero games."""
+        if not self.has_psn:
+            return False
+        now = asyncio.get_running_loop().time()
+        if not force and now < self._inventory_expiry:
+            return self.installed_inventory_available
+        async with self._inventory_lock:
+            now = asyncio.get_running_loop().time()
+            if not force and now < self._inventory_expiry:
+                return self.installed_inventory_available
+            if not self._psn or self.psn_authenticated is False:
+                if now < self._psn_retry_after or not await self._recover_psn():
+                    return False
+            try:
+                duid, name, installed, available = await self._launcher.fetch_console_inventory(
+                    self._psn.psn.authenticator,
+                    duid=self.console_duid,
+                    local_name=self._local_console_name(),
+                )
+            except PSNAuthorizationError:
+                if not await self._recover_psn():
+                    return False
+                try:
+                    duid, name, installed, available = await self._launcher.fetch_console_inventory(
+                        self._psn.psn.authenticator,
+                        duid=self.console_duid, local_name=self._local_console_name(),
+                    )
+                except GameLaunchError as exc:
+                    self.psn_error = str(exc)
+                    self._inventory_expiry = now + 60
+                    return False
+            except GameLaunchError as exc:
+                self.psn_error = str(exc)
+                self._inventory_expiry = now + 60
+                _LOG.warning("[%s] PSN inventory: %s", self.log_id, exc)
+                return False
+            self._save_identity(duid=duid, name=name)
+            self._installed_titles = installed
+            self.installed_inventory_available = available
+            self.installed_count = len(installed) if available else None
+            self._inventory_expiry = now + 300
+            self.psn_error = "" if available else "Sony did not include installed-title data for this console"
+            self.push_update()
+            return available
+
+    async def get_installed_game_library(
+        self, limit: int = 20, offset: int = 0,
+    ) -> tuple[list[dict[str, str]], int] | None:
+        if not await self.refresh_installed_titles():
+            return None
+        # Build a bounded history index for artwork. Games never played on
+        # this account still appear by title ID, not as fabricated entries.
+        if self._psn and not self._recent_art:
+            try:
+                def history():
+                    rows = list(islice(self._psn.client.title_stats(offset=0, page_size=50), 150))
+                    return rows
+                rows = await asyncio.to_thread(history)
+                for item in rows:
+                    try:
+                        key = normalize_title_id(item.title_id)
+                    except (ValueError, AttributeError):
+                        continue
+                    self._recent_art[key] = {
+                        "name": str(item.name or ""),
+                        "image": str(item.image_url or ""),
+                    }
+            except Exception:
+                _LOG.debug("[%s] Optional game metadata lookup unavailable", self.log_id)
+        limit, offset = max(1, min(int(limit), 50)), max(0, int(offset))
+        pages = []
+        for title in self._installed_titles[offset: offset + limit]:
+            art = self._recent_art.get(title["title_id"], {})
+            pages.append({
+                **title,
+                "name": art.get("name") or title["name"] or title["title_id"],
+                "image": art.get("image") or "",
+            })
+        return pages, len(self._installed_titles)
+
+    async def launch_game(self, title_id: str) -> bool:
+        if not self.can_launch_games:
+            raise GameLaunchError("PSN account and paired PS5 are required for launching games")
+        if not self._psn or self.psn_authenticated is False:
+            if not await self._recover_psn():
+                raise GameLaunchError("PSN authentication is unavailable")
+        for attempt in range(2):
+            try:
+                return await self._launcher.launch(
+                    authenticator=self._psn.psn.authenticator,
+                    title_id=title_id,
+                    duid=self.console_duid,
+                    local_name=self._local_console_name(),
+                )
+            except PSNAuthorizationError:
+                if attempt or not await self._recover_psn():
+                    raise
+        return False
 
     @property
     def device_type(self) -> str:
@@ -115,10 +287,14 @@ class PSNAccount(PollingDevice):
             except PSNAWPAuthenticationError:
                 _LOG.warning("[%s] PSN authentication expired; local PS5 control remains available", self.log_id)
                 self.psn_authenticated = False
+                self.psn_error = "PSN authentication expired"
+                self._psn_retry_after = asyncio.get_running_loop().time() + 120
                 self._psn = None
             except Exception:
                 _LOG.exception("[%s] PSN initialization failed; local control remains available", self.log_id)
                 self.psn_authenticated = False
+                self.psn_error = "PSN initialization failed"
+                self._psn_retry_after = asyncio.get_running_loop().time() + 120
                 self._psn = None
         await self.poll_device()
 
@@ -138,20 +314,42 @@ class PSNAccount(PollingDevice):
             try:
                 status = await self._control.status()
                 local_online = bool(status and self._control.awake)
+                if status:
+                    host_id = str(status.get("host-id") or "").strip()
+                    if host_id and self.console_host_id and host_id.casefold() != self.console_host_id.casefold():
+                        _LOG.warning("[%s] LAN console host ID changed unexpectedly; ignoring status", self.log_id)
+                        local_online = None
+                    else:
+                        self._save_identity(host_id=host_id, name=str(status.get("host-name") or ""))
             except Exception:
                 _LOG.debug("[%s] Local discovery/status unavailable", self.log_id, exc_info=True)
         now = asyncio.get_running_loop().time()
+        if self.has_psn and not self._psn and now >= self._psn_retry_after:
+            await self._recover_psn()
         if self._psn and now >= self._next_psn_poll:
             self._next_psn_poll = now + 45
             try:
                 self._psn_data = await asyncio.to_thread(self._psn.get_data)
                 self.psn_authenticated = True
+                self.psn_error = ""
+                self._psn_failures = 0
+                account_id = str(self._psn_data.account_id or "")
+                # A PSN account must never be silently rebound.
+                if account_id:
+                    self._save_identity(account_id=account_id)
             except PSNAWPAuthenticationError:
                 self.psn_authenticated = False
                 self._psn_data = None
+                self.psn_error = "PSN token expired"
+                self._psn_retry_after = now + 120
+                self._psn_failures += 1
+                self._next_psn_poll = self._psn_retry_after
                 _LOG.warning("[%s] PSN authentication expired", self.log_id)
-            except Exception:
-                _LOG.warning("[%s] PSN presence fetch failed", self.log_id, exc_info=True)
+            except Exception as exc:
+                self._psn_failures += 1
+                self._next_psn_poll = now + min(600, 45 * (2 ** min(4, self._psn_failures)))
+                self.psn_error = "PSN temporarily unreachable"
+                _LOG.warning("[%s] PSN presence fetch failed: %s", self.log_id, type(exc).__name__)
         data = self._psn_data
         presence_online = bool(
             data and data.platform
