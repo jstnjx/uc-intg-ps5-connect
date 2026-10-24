@@ -48,10 +48,14 @@ def as_core_page(page) -> dict:
     return {"name": record["name"], "grid": record["grid"], "items": record["items"]}
 
 
-async def update_core_library_pages(config, entity_id: str, pages: list) -> bool:
-    """Non-destructively update generated pages; preserve all unrelated pages."""
+async def update_core_library_pages(config, entity_id: str, pages: list) -> list[str]:
+    """Refresh owned game pages without touching user-defined Remote pages.
+
+    Core assigns IDs to newly POSTed pages. Keep those IDs in the integration
+    configuration rather than assuming Core uses our proposed page IDs.
+    """
     if not pages:
-        return False
+        return []
     from unfurled.api import CoreAPI
     prefix = f"remotes/{quote(entity_id, safe='')}/ui/pages"
     async with CoreAPI(config.remote_url, api_key=config.remote_api_key, timeout=15) as api:
@@ -59,22 +63,34 @@ async def update_core_library_pages(config, entity_id: str, pages: list) -> bool
         if not isinstance(current, list):
             raise ValueError("Core returned an invalid Remote UI page list")
         existing = {
-            str(item.get("page_id")): item
-            for item in current if isinstance(item, dict)
+            str(item.get("page_id")): item for item in current
+            if isinstance(item, dict) and item.get("page_id")
         }
-        own_new = {page.page_id: page for page in pages}
-        for page in pages:
+        # Adopt pages from the original integration registration, or use IDs
+        # returned by Core during previous daily synchronizations.
+        owned = list(config.game_refresh_page_ids)
+        for name in sorted(existing):
+            if _GAME_PAGE.fullmatch(name) and name not in owned:
+                owned.append(name)
+        current_owned = [value for value in owned if value in existing]
+        output_ids = []
+        for index, page in enumerate(pages):
             payload = as_core_page(page)
-            if page.page_id in existing:
-                old = existing[page.page_id]
-                if any(old.get(k) != v for k, v in payload.items()):
-                    await api.request("PATCH", prefix + "/" + quote(page.page_id, safe=""),
+            if index < len(current_owned):
+                ident = current_owned[index]
+                previous = existing[ident]
+                if any(previous.get(k) != v for k, v in payload.items()):
+                    await api.request("PATCH", prefix + "/" + quote(ident, safe=""),
                                       json=payload)
             else:
-                await api.request("POST", prefix, json={"page_id": page.page_id, **payload})
-        # Delete *only* previously generated pages missing from the new inventory.
-        for page_id in existing:
-            if _GAME_PAGE.fullmatch(page_id) and page_id not in own_new:
-                await api.request("DELETE", prefix + "/" + quote(page_id, safe=""))
-        _LOG.info("Updated %d PS5 game-library pages in Core", len(pages))
-    return True
+                response = await api.request("POST", prefix, json=payload)
+                ident = str(response.get("page_id", "")) if isinstance(response, dict) else ""
+                if not ident:
+                    raise ValueError("Core did not return a generated page ID")
+            output_ids.append(ident)
+        # Only remove pages which the integration owns. Unknown/custom pages
+        # and pages owned by other integrations remain untouched.
+        for stale in current_owned[len(pages):]:
+            await api.request("DELETE", prefix + "/" + quote(stale, safe=""))
+        _LOG.info("Updated %d PS5 game-library pages in Core", len(output_ids))
+    return output_ids
