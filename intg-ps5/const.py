@@ -13,10 +13,3 @@ class PSNConfig:
     console_name: str = ""
     psn_account_id: str = ""
     library_view: str = "installed_games"
-    game_refresh_enabled: bool = True
-    game_refresh_time: str = "03:00"
-    game_refresh_timezone: str = "Europe/Berlin"
-    game_refresh_last_date: str = ""
-    game_refresh_page_ids: list[str] = field(default_factory=list)
-    remote_url: str = ""
-    remote_api_key: str = ""
