@@ -77,7 +77,17 @@ exposes `PLAY_MEDIA` and `can_play` on game entries. There are no controller
 macros, jailbreak APIs or additional helper daemons.
 
 The request format has been confirmed **statically** from the supplied
-desktop distribution. Success on the user's retail PS5 has **not yet been
-established** and must be tested. Game availability/installation, PSN account
+desktop distribution. The user subsequently confirmed that direct title launching works on
+his retail PS5 with integration v0.4.0. Game availability/installation, PSN account
 entitlements, login state and Sony API changes can affect the outcome.
 Never commit NPSSO cookies, Sony OAuth tokens or paired-console credentials.
+
+## Installed titles (v0.5.0)
+
+The PXPlay desktop build also exposes `getPs5ConsolesWithInstalledTitles`,
+which requests `includeFields=device,systemData`. Each `client.systemData.installedTitles.titles`
+entry exposes `npTitleId`. This is **console inventory**, not PSN played-history
+and not evidence that Sony includes display names or artwork. The integration
+normalizes each title ID, resolves names/art via existing played-history when
+available, and displays the ID otherwise. Absence of the inventory field is
+treated as unavailable, not zero installed titles.

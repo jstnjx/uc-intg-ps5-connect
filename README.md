@@ -18,11 +18,16 @@ The Remote itself performs LAN Remote Play registration, session management, but
 | Console's local online/offline status | ✓ | — |
 | Current game title, platform and cover art | — | ✓ |
 | Played-game library browsing | — | ✓ |
-| Direct PSN title-ID game launching | — | ✓ (new in v0.4.0; pending hardware validation) |
+| Installed game/app inventory browsing | — | ✓ (Sony's per-console systemData) |
+| Direct PSN title-ID game launching | — | ✓ (confirmed working on user's PS5 in v0.4.0) |
+| Persistent console identity and safe multi-PS5 selection | ✓ (DDP host-id) | ✓ (DUID/account) |
+| DHCP address recovery through verified host-id | ✓ | — |
+| Automatic PSN reconnection and retry/backoff | — | ✓ |
+| Installed title count / connection-status sensors | ✓ | ✓ |
 | PSN authentication health sensor | — | ✓ |
 | Power switch + media player entities | ✓ | Optional |
 
-Streaming apps may not reliably report their titles to PSN. Game launching sends the retail PS5 a Sony cloud-assisted navigation command and waits for confirmation. This path has been reverse-engineered and unit-tested, but not yet validated on a physical console.
+Streaming apps may not reliably report their titles to PSN. Game launching sends a Sony cloud-assisted navigation command and waits for confirmation. The user confirmed direct title launching on a retail PS5 in v0.4.0.
 
 ## PS5 Remote Play protocol compatibility
 
@@ -92,10 +97,46 @@ Supported game IDs look like `PPSA28183_00` or `CUSA00605_00`; Sony
 requires the base ID without the `_00` suffix. Games must actually be
 installed on the target console. The running account needs appropriate access.
 
-**Testing status:** request structure and error/status logic have offline unit
-tests, but Sony may change undocumented API behavior, and the flow has **not
-yet been tested on the user's physical PS5**. See
+**Testing status:** direct PSN game launching was **confirmed working by the user**
+on a physical PS5 in v0.4.0. Sony may change undocumented API behavior. See
 [research and protocol details](docs/game-launch-research.md).
+
+## Installed library and console identity (v0.5.0)
+
+The game browser now has two folders:
+
+- **Installed games & apps** reads `systemData.installedTitles.titles` from
+  Sony's console-scoped PSN API. Each game's `npTitleId` is normalized and
+  matched against the existing PSN play-history library for artwork and names.
+  Unmatched games remain in the list with their title ID; they are not hidden.
+  The inventory is cached for five minutes. If Sony does not supply the
+  `installedTitles` field, the inventory is **unavailable**, not an empty list.
+- **Recently played** retains the existing paginated PSN account history.
+
+Setup and subsequent API discovery retain the **console's PSN DUID** and
+**PSN account ID** separately from its **LAN DDP host ID** and current IP
+address. With several PS5s, an exact configured DUID or an unambiguous
+console-name match is required. Identity conflicts do not silently change the
+console assignment. If DHCP changes the IP, the local controller will search
+for the *previously verified* host ID and rebind only to an exact match.
+Re-pairing uses the same stable entity identifier when host ID matches.
+
+PSN authentication failures cannot disable LAN controller and power features.
+Expired sessions receive bounded renewal attempts using the stored NPSSO,
+with exponential backoff on errors. Game-launch authorization failures get
+one renewal/retry; a completed Sony command remains required to report success.
+Repeated wake requests are throttled.
+
+### Additional UC sensors
+
+- **Installed Titles**: confirmed per-console installed item count; **Unknown**
+  if Sony did not provide inventory.
+- **Connection**: Remote Play connected, reachable and idle, offline/rest,
+  or console unreachable.
+- Existing **Game** and **NPSSO Token** sensors remain available.
+
+These new capabilities need verification on Remote 3 hardware; no additional
+daemon or console modification is required.
 
 ## How local control works
 
