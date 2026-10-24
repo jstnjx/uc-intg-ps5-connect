@@ -188,10 +188,14 @@ class PSNMediaPlayer(MediaPlayerEntity):
                 BrowseMediaItem(
                     media_id=item["title_id"],
                     title=item["name"],
-                    subtitle=item.get("category") or "Installed on PS5",
+                    subtitle=(
+                        f"Title ID: {item['title_id']}"
+                        if item.get("missing_name")
+                        else (item.get("category") or "Installed on PS5")
+                    ),
                     media_class=media_player.MediaClass.GAME,
                     can_browse=False, can_play=self._device.can_launch_games,
-                    thumbnail=item.get("image") or None,
+                    thumbnail=item.get("image") or "icon://uc:gamepad-modern",
                 )
                 for item in entries
             ]
