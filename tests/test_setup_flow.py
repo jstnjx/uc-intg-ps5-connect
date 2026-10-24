@@ -1,12 +1,10 @@
-"""Regression coverage for PS5 setup and update flows (no PSN/hardware)."""
+"""Offline regression coverage for the simplified PS5 Connect setup flow."""
 from __future__ import annotations
 
 import asyncio
 import base64
-from dataclasses import dataclass
 import importlib.util
 from pathlib import Path
-import re
 import sys
 import types
 import unittest
@@ -83,9 +81,6 @@ def setup_module():
                 AssertionError("Unexpected PS5 pairing")
             ),
         ),
-        "game_refresh": types.SimpleNamespace(valid_refresh_time=lambda value: bool(
-            re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", value)
-        )),
         "psnawp_api": types.ModuleType("psnawp_api"),
         "psnawp_api.utils": types.ModuleType("psnawp_api.utils"),
         "psnawp_api.utils.misc": types.SimpleNamespace(
@@ -123,12 +118,6 @@ class SetupFlowTests(unittest.IsolatedAsyncioTestCase):
             },
             console_host_id="existing-host-id",
             library_view="psn_games",
-            game_refresh_enabled=True,
-            game_refresh_time="04:15",
-            game_refresh_timezone="Europe/Berlin",
-            remote_url="http://remote.test",
-            remote_api_key="saved-core-key",
-            game_refresh_page_ids=["page-1"],
         )
 
     def existing_flow(self):
@@ -137,105 +126,73 @@ class SetupFlowTests(unittest.IsolatedAsyncioTestCase):
         flow._selected_config_id = config.identifier
         return flow, config
 
-    async def test_abandoned_setup_does_not_leak_pending_wizard_state(self):
-        flow, cfg = self.existing_flow()
-        flow._pending_device_config = cfg
-        flow._step = "pin"
-        flow._account_id = "1"
-        await flow.handle_driver_setup(FakeStart())
-        self.assertIsNone(flow._pending_device_config)
-        self.assertIsNone(flow._selected_config_id)
-        self.assertEqual(flow._step, "")
-        self.assertEqual(flow._account_id, "")
-
-    def test_reconfigure_form_prefills_non_secret_settings(self):
+    def test_reconfigure_form_only_has_required_ps5_fields(self):
         flow, cfg = self.existing_flow()
         screen = flow.get_manual_entry_form()
         values = {field["id"]: next(iter(field["field"].values())).get("value")
                   for field in screen.settings}
         self.assertEqual(screen.title["en"], "Edit PlayStation 5")
-        self.assertEqual(values["game_refresh_time"], "04:15")
-        self.assertEqual(values["remote_url"], cfg.remote_url)
-        self.assertEqual(values["account_id"], "1")
+        self.assertEqual(values["account_id"], cfg.psn_account_id)
         self.assertEqual(values["npsso"], "")
-        self.assertEqual(values["remote_pin"], "")
         self.assertFalse(values["re_pair"])
+        self.assertEqual(set(values), {
+            "npsso", "account_id", "add_control", "re_pair", "launch_device_id"
+        })
 
-    async def test_update_does_not_repair_or_repeat_console_selection(self):
-        flow, original = self.existing_flow()
+    async def test_update_preserves_pairing_and_browser_without_second_pin(self):
+        flow, old = self.existing_flow()
         new = await flow.query_device({
-            "account_id": "1",
-            "add_control": "true",
-            "game_refresh_enabled": "true",
-            "game_refresh_time": "05:30",
-            "game_refresh_timezone": "Europe/Berlin",
-            "remote_url": "http://remote.test",
-            "remote_pin": "",
-            "launch_device_id": "",
+            "account_id": "1", "add_control": "true", "launch_device_id": ""
         })
         self.assertIsInstance(new, PSNConfig)
-        self.assertEqual(new.ps_device, original.ps_device)
-        self.assertEqual(new.npsso, original.npsso)
-        self.assertEqual(new.remote_api_key, original.remote_api_key)
-        self.assertEqual(new.game_refresh_page_ids, ["page-1"])
-        self.assertEqual(new.game_refresh_time, "05:30")
+        self.assertEqual(new.ps_device, old.ps_device)
+        self.assertEqual(new.npsso, old.npsso)
+        self.assertEqual(new.library_view, "psn_games")
         self.assertIsNone(flow._pending_device_config)
 
-    async def test_new_setup_proceeds_to_discovery_without_existing_variable(self):
+    async def test_first_time_setup_does_not_reference_unbound_existing(self):
         flow = SETUP.PSNSetupFlow(FakeConfigManager())
         with patch.object(SETUP, "discover_ps5", return_value=[]):
             screen = await flow.query_device({
-                "account_id": "1", "add_control": "true",
-                "game_refresh_enabled": "false",
+                "account_id": "1", "add_control": "true"
             })
-        self.assertIsInstance(screen, FakeRequestInput)
         self.assertEqual(screen.title["en"], "Select PS5")
         self.assertIsInstance(flow._pending_device_config, PSNConfig)
-        self.assertFalse(flow._pending_device_config.game_refresh_enabled)
         self.assertEqual(flow._pending_device_config.psn_account_id, "1")
 
-    async def test_explicit_repair_is_only_way_to_repeat_pin_flow(self):
+    async def test_explicit_repair_retains_config_id(self):
         flow, original = self.existing_flow()
         with patch.object(SETUP, "discover_ps5", return_value=[]):
             screen = await flow.query_device({
-                "account_id": "1", "add_control": "true",
-                "re_pair": "true", "game_refresh_enabled": "false",
+                "account_id": "1", "add_control": "true", "re_pair": "true"
             })
         self.assertEqual(screen.title["en"], "Select PS5")
-        self.assertEqual(flow._step, "select")
         self.assertEqual(flow._pending_device_config.identifier, original.identifier)
 
-    async def test_legacy_existing_account_can_be_reused(self):
+    async def test_existing_legacy_account_can_be_reused(self):
         flow, cfg = self.existing_flow()
         cfg.psn_account_id = ""
-        new = await flow.query_device({
-            "add_control": "true", "game_refresh_enabled": "false",
-        })
+        new = await flow.query_device({"add_control": "true"})
         self.assertIsInstance(new, PSNConfig)
         self.assertEqual(new.psn_account_id, account_id_base64("1"))
         self.assertEqual(new.npsso, cfg.npsso)
 
-    async def test_no_pin_needed_for_basic_setup_or_update(self):
+    async def test_no_core_api_key_required(self):
         flow, _ = self.existing_flow()
         new = await flow.query_device({
-            "account_id": "1", "game_refresh_enabled": "false",
-            "add_control": "true",
+            "account_id": "1", "add_control": "true",
         })
         self.assertIsInstance(new, PSNConfig)
-        self.assertEqual(new.remote_api_key, "")
-        self.assertFalse(new.game_refresh_enabled)
+        self.assertFalse(hasattr(new, "remote_api_key"))
 
-    async def test_missing_refresh_pin_shows_error_not_crash(self):
-        flow = SETUP.PSNSetupFlow(FakeConfigManager())
-        screen = await flow.query_device({
-            "account_id": "1", "add_control": "true",
-            "game_refresh_enabled": "true",
-            "remote_url": "http://remote.test", "remote_pin": "",
-        })
-        self.assertIsInstance(screen, FakeRequestInput)
-        self.assertEqual(screen.title["en"], "Connect PlayStation 5")
-        errors = [field for field in screen.settings if field["id"] == "error"]
-        self.assertEqual(len(errors), 1)
+    async def test_abandoned_flow_is_reset(self):
+        flow, cfg = self.existing_flow()
+        flow._pending_device_config = cfg
+        flow._step = "pin"
+        await flow.handle_driver_setup(FakeStart())
+        self.assertIsNone(flow._pending_device_config)
+        self.assertIsNone(flow._selected_config_id)
+        self.assertEqual(flow._step, "")
 
 
 if __name__ == "__main__":
