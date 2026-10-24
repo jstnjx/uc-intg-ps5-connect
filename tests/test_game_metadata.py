@@ -46,6 +46,34 @@ class GamelistAuthenticator:
 
 
 class MetadataTests(unittest.TestCase):
+    def test_clean_titles_trademarks_and_html_entities(self):
+        for name, expected in (
+            ("Astro Bot (TM)", "Astro Bot"),
+            ("My Game (Playstatio&#x6E;®5)", "My Game"),
+            ("Ratchet &amp; Clank™", "Ratchet & Clank"),
+            ("Demon's Souls (PS5)", "Demon's Souls"),
+            ("ps5_native_game", ""),
+            ("CUSA00314", ""),
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(metadata.clean_game_title(name), expected)
+
+    def test_trophy_title_metadata_is_normalized(self):
+        class TrophyAuth:
+            def get(self, **kwargs):
+                self.request = kwargs
+                return Response(200, {"titles": [
+                    {"npTitleId": "PPSA28183_00", "trophyTitles": [{
+                        "trophyTitleName": "Returnal (PlayStation®5)",
+                        "trophyTitleIconUrl": "https://example.org/returnal.png",
+                    }]},
+                ]})
+        auth = TrophyAuth()
+        result = metadata.fetch_trophy_game_metadata(auth, {"PPSA28183"})
+        self.assertEqual(result["PPSA28183"]["name"], "Returnal")
+        self.assertTrue(result["PPSA28183"]["image"].startswith("https://"))
+        self.assertEqual(auth.request["params"]["npTitleIds"], "PPSA28183_00")
+
     def test_localized_name_and_image_preferred(self):
         parsed, ok = metadata.parse_titles_page({"titles": [{
             "titleId": "PPSA28183_00",
