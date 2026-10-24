@@ -703,6 +703,8 @@ class PSNAccount(PollingDevice):
                 pass
             if self.psn_media_title:
                 self.psn_state = media_player.States.PLAYING
+        if self.installed_inventory_available and self._recent_art:
+            await self._publish_game_remote()
         if self._psn and self.psn_authenticated is True and now >= self._trophy_expiry:
             if self._trophy_task is None or self._trophy_task.done():
                 self._trophy_expiry = now + 1800

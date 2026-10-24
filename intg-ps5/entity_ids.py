@@ -19,18 +19,19 @@ def resolve_device_id(
     '_authentication'. Resolve the suffix only when a matching base device
     is known, so device IDs cannot be accidentally truncated.
     """
-    if (
-        not parsed_device_id
-        or not entity_id.startswith(("sensor.", "select."))
-        or not any(parsed_device_id.endswith("_" + suffix)
-                   for suffix in ("authentication", "installed_titles", "connection", "active_title_id", "psn_health", "profile", "library_view"))
-    ):
+    if not parsed_device_id or configuration_exists(parsed_device_id):
         return parsed_device_id
-    if configuration_exists(parsed_device_id):
+    suffixes = (
+        "authentication", "installed_titles", "connection",
+        "active_title_id", "psn_health", "profile", "library_view",
+        "trophy_level", "platinum_trophies", "earned_trophies",
+        "current_game_trophies", "game_library",
+    )
+    if not entity_id.startswith(("sensor.", "select.", "remote.")):
         return parsed_device_id
-    for suffix in ("authentication", "installed_titles", "connection"):
+    for suffix in sorted(suffixes, key=len, reverse=True):
         if parsed_device_id.endswith("_" + suffix):
-            candidate = parsed_device_id.removesuffix("_" + suffix)
-            if candidate and configuration_exists(candidate):
-                return candidate
+            base = parsed_device_id[: -(len(suffix) + 1)]
+            if base and configuration_exists(base):
+                return base
     return parsed_device_id

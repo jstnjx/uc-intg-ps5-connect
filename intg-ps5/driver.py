@@ -51,6 +51,10 @@ async def main() -> None:
             PSNMediaPlayer, PSNSwitch, PSNSensor, PSNAuthenticationSensor,
             PSNInstalledCountSensor, PSNConnectionSensor,
             PSNActiveTitleIdSensor, PSNAPISensor,
+            lambda cfg, dev: [
+                PSNTrophySensor(cfg, dev, kind)
+                for kind in PSNTrophySensor.TYPES
+            ] if dev.has_psn else [], PSNTrophySensor,
             lambda cfg, dev: PS5Remote(cfg, dev) if dev.has_control else [],
             lambda cfg, dev: PS5ProfileSelect(cfg, dev) if dev.has_control else [],
             lambda cfg, dev: PS5LibraryViewSelect(cfg, dev) if dev.has_psn else [],
