@@ -12,8 +12,6 @@ import logging
 import re
 import time
 
-import requests
-
 from game_launch import normalize_title_id
 
 _LOG = logging.getLogger(__name__)
@@ -80,6 +78,10 @@ def fetch_legacy_store_metadata(title_ids: set[str], *, max_items: int = 8) -> d
 
     Never infer a title or image from a bare identifier on failed requests.
     """
+    try:
+        import requests
+    except ImportError:
+        return {}
     result = {}
     for title in sorted(t for t in title_ids if t.startswith("CUSA"))[:max_items]:
         try:
