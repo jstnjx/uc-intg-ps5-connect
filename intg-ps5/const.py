@@ -12,3 +12,4 @@ class PSNConfig:
     console_host_id: str = ""  # LAN DDP host-id; not the PSN DUID
     console_name: str = ""
     psn_account_id: str = ""
+    library_view: str = "installed_games"

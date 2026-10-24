@@ -23,7 +23,7 @@ def resolve_device_id(
         not parsed_device_id
         or not entity_id.startswith("sensor.")
         or not any(parsed_device_id.endswith("_" + suffix)
-                   for suffix in ("authentication", "installed_titles", "connection"))
+                   for suffix in ("authentication", "installed_titles", "connection", "active_title_id", "psn_health"))
     ):
         return parsed_device_id
     if configuration_exists(parsed_device_id):

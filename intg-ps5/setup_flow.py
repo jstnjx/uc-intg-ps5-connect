@@ -1,4 +1,4 @@
-"""Remote-hosted PS5 + optional PlayStation Network setup flow.
+"""PlayStation 5 setup and pairing flow.
 
 MPL-2.0. Based on Jack Powell's uc-intg-psn setup structure.
 """
@@ -79,31 +79,32 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         return self._account_form()
 
     def _account_form(self, error: str | None = None) -> RequestUserInput:
-        fields = [_label(
-            "Enter an NPSSO cookie for PSN presence, artwork, and game-library browsing. "
-            "Get it after signing in at https://ca.account.sony.com/api/v1/ssocookie . "
-            "Alternatively, supply your PSN Account ID (decimal or Base64) for LOCAL control without PSN. "
-            "No daemon, Docker, or additional host is needed."
-        )]
+        fields = []
         if error:
             fields.append(_label(error, "error"))
-        fields += [
-            {"id": "npsso", "label": {"en": "NPSSO token (optional with account ID)"},
-             "field": {"text": {"value": ""}}},
-            {"id": "account_id", "label": {"en": "PSN Account ID (optional with NPSSO)"},
-             "field": {"text": {"value": ""}}},
-            {"id": "add_control", "label": {"en": "Pair PS5 for local navigation and power"},
-             "field": {"checkbox": {"value": True}}},
-            _label(
-                "If your PSN account has multiple PS5 consoles, provide this console's "
-                "PSN device DUID to avoid starting a game on the wrong console. "
-                "Leave blank if the account has only one PS5.",
-                "launch_duid_help",
-            ),
-            {"id": "launch_device_id", "label": {"en": "PSN console device ID (optional)"},
-             "field": {"text": {"value": self._launch_device_id}}},
-        ]
-        return _form("PlayStation 5 account", fields)
+        fields.extend([
+            {
+                "id": "npsso",
+                "label": {"en": "PSN token (NPSSO)"},
+                "field": {"text": {"value": ""}},
+            },
+            {
+                "id": "account_id",
+                "label": {"en": "PSN Account ID (if no token)"},
+                "field": {"text": {"value": ""}},
+            },
+            {
+                "id": "add_control",
+                "label": {"en": "Enable controller and power controls"},
+                "field": {"checkbox": {"value": True}},
+            },
+            {
+                "id": "launch_device_id",
+                "label": {"en": "PSN console ID (optional)"},
+                "field": {"text": {"value": self._launch_device_id}},
+            },
+        ])
+        return _form("Connect PlayStation Network", fields)
 
     async def query_device(self, input_values: dict[str, Any]):
         token_value = str(input_values.get("npsso") or "").strip()
@@ -116,7 +117,7 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         control = input_values.get("add_control", True)
         control = control is True or str(control).lower() in ("true", "1", "on")
         if not token_value and not account_value:
-            return self._account_form("Provide an NPSSO token or PSN Account ID.")
+            return self._account_form("Enter a PSN token or Account ID.")
         self._npsso = ""
         self._psn_name = "PlayStation 5"
         self._account_id = ""
@@ -136,23 +137,25 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 self._npsso = token
             except Exception:
                 _LOG.warning("PSN sign-in failed", exc_info=True)
-                return self._account_form("Could not authenticate with Sony. Obtain a new NPSSO token.")
+                return self._account_form("PSN sign-in failed. Check your token.")
         else:
             self._account_id = account_value
         try:
             account_id_to_base64(self._account_id)
         except (ValueError, OverflowError, binascii.Error):
-            return self._account_form("Account ID must be decimal or an eight-byte Base64 value.")
+            return self._account_form("Enter a valid PSN Account ID.")
         if not control:
             existing = next(
-                (cfg for cfg in self.config.all()
-                 if cfg.ps_device.get("profiles", {})
-                 .get(cfg.ps_device.get("user", ""), {})
-                 .get("id") == account_id_to_base64(self._account_id)),
+                (
+                    cfg for cfg in self.config.all()
+                    if cfg.ps_device.get("profiles", {})
+                    .get(cfg.ps_device.get("user", ""), {})
+                    .get("id") == account_id_to_base64(self._account_id)
+                ),
                 None,
             )
             if not self._npsso and not existing:
-                return self._account_form("Provide NPSSO for PSN-only browsing, or enable console pairing.")
+                return self._account_form("Enter a PSN token or enable controller pairing.")
             return PSNConfig(
                 identifier=existing.identifier if existing else (
                     "psn_" + self._account_id.replace("/", "_").replace("+", "_").replace("=", "")
@@ -161,12 +164,10 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 npsso=self._npsso or (existing.npsso if existing else ""),
                 ps_device=dict(existing.ps_device) if existing else {},
                 launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
-            console_host_id=(credentials.get("host_id") or (existing.console_host_id if existing else "")),
-            console_name=(credentials.get("host_name") or (existing.console_name if existing else "")),
-            psn_account_id=self._account_id or (existing.psn_account_id if existing else ""),
                 console_host_id=existing.console_host_id if existing else "",
                 console_name=existing.console_name if existing else "",
                 psn_account_id=self._account_id or (existing.psn_account_id if existing else ""),
+                library_view=existing.library_view if existing else "installed_games",
             )
         self._pending_device_config = PSNConfig(
             identifier="ps5_pending",
@@ -188,7 +189,7 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         ]
         items.append({"id": _MANUAL, "label": {"en": "Enter IP address manually"}})
         return _form("Select PS5", [
-            _label("Turn on the PS5, enable Remote Play, and ensure it is on the same LAN as the Remote."),
+            _label("Select the PS5 to pair. Turn it on if it is not listed."),
             {"id": "console", "label": {"en": "PS5 console"},
              "field": {"dropdown": {"items": items, "value": items[0]["id"]}}},
         ])
@@ -206,8 +207,7 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
 
     def _pin_form(self, error: str | None = None, host: str = "") -> RequestUserInput:
         fields = [_label(
-            "On PS5: Settings → System → Remote Play → Link Device. "
-            "Generate a fresh eight-digit PIN immediately before confirming (it expires quickly)."
+            "On PS5: Settings → System → Remote Play → Link Device. Enter the displayed code."
         )]
         if error:
             fields.append(_label(error, "error"))
@@ -220,7 +220,7 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             "id": "pin", "label": {"en": "8-digit Remote Play PIN"},
             "field": {"text": {"value": ""}},
         })
-        return _form("Pair Remote Play", fields)
+        return _form("Pair PlayStation 5", fields)
 
     async def _pair(self, values: dict):
         host = self._host or str(values.get("manual_ip") or "").strip()
@@ -239,7 +239,7 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         except Exception:
             _LOG.warning("PS5 pairing failed", exc_info=True)
             return self._pin_form(
-                "Could not pair. Check Remote Play, same-network access, PSN Account ID, and a NEW PIN.",
+                "Pairing failed. Check the PS5 and enter a new PIN.",
                 host=host,
             )
         existing = next(
@@ -253,8 +253,13 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         )
         return PSNConfig(
             identifier=existing.identifier if existing else "ps5_" + host.replace(".", "_"),
-            name=self._psn_name if self._psn_name != "PlayStation 5" else f"PlayStation 5 ({host})",
+            name=self._psn_name if self._psn_name != "PlayStation 5"
+                else str(credentials.get("host_name") or f"PlayStation 5 ({host})"),
             npsso=self._npsso or (existing.npsso if existing else ""),
             ps_device=credentials,
             launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
+            console_host_id=str(credentials.get("host_id") or (existing.console_host_id if existing else "")),
+            console_name=str(credentials.get("host_name") or (existing.console_name if existing else "")),
+            psn_account_id=self._account_id or (existing.psn_account_id if existing else ""),
+            library_view=existing.library_view if existing else "installed_games",
         )
