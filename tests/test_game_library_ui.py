@@ -81,6 +81,14 @@ def load_game_remote():
             r"(CUSA|PPSA)[0-9]{5}", str(x)
         ).group(0)),
         "game_metadata": mock_module("game_metadata", clean_game_title=lambda x: str(x or "")),
+        "game_artwork": mock_module(
+            "game_artwork",
+            make_icon=lambda name: "data:image/svg+xml;base64,AAA=",
+            styled_image=lambda uri: (
+                '<p align="center"><img src="' + uri
+                + '" align="middle" width="85" height="85"></p>'
+            ),
+        ),
     }
     with patch.dict(sys.modules, substitutes):
         spec = importlib.util.spec_from_file_location("test_ps5_game_remote", CODE / "game_remote.py")
@@ -104,6 +112,8 @@ class GameRemoteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(pages[1].items), 1)
         self.assertEqual((pages[0].items[-1].x, pages[0].items[-1].y), (3, 5))
         self.assertTrue(all(len(item) <= 20 for item in commands))
+        self.assertTrue(all('<img' in item.text for page in pages for item in page.items))
+        self.assertTrue(all('width="85" height="85"' in item.text for page in pages for item in page.items))
 
     async def test_game_commands_use_direct_launch_not_navigation(self):
         entity = self.module.PS5GameLibraryRemote(
