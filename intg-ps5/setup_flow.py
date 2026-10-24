@@ -78,8 +78,8 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
         self._step = ""
         self._launch_device_id = ""
         self._game_refresh_enabled = True
-        self._game_refresh_time = "03:00"
-        self._game_refresh_timezone = "Europe/Berlin"
+        self._game_refresh_time = ""
+        self._game_refresh_timezone = ""
         self._remote_url = ""
         self._remote_api_key = ""
         self._account_value = ""
@@ -409,6 +409,16 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                      str(cfg.console_host_id or cfg.ps_device.get("host_id") or "").casefold()
              )), None
         )
+        selected = self.selected_config_entry
+        if selected is not None and self._selected_config_id:
+            # In a re-pair operation retain the configured entity identity.
+            # Prevent accidentally registering a different physical console.
+            expected = str(selected.console_host_id or selected.ps_device.get("host_id") or "")
+            observed = str(credentials.get("host_id") or "")
+            if expected and observed and expected.casefold() != observed.casefold():
+                return self._pin_form("This is a different PS5. Add it as a new device.",
+                                      host=host)
+            existing = selected
         return PSNConfig(
             identifier=existing.identifier if existing else "ps5_" + host.replace(".", "_"),
             name=self._psn_name if self._psn_name != "PlayStation 5"
