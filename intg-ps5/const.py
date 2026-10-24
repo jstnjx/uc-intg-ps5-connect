@@ -10,3 +10,4 @@ class PSNConfig:
     ps_device: dict[str, Any] = field(default_factory=dict)
     launch_endpoint: str = ""
     launch_device_id: str = ""
+    launch_macros: dict[str, list[dict[str, Any]]] = field(default_factory=dict)

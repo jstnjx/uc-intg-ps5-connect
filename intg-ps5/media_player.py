@@ -32,7 +32,8 @@ COMMAND_BUTTONS = {
     media_player.Commands.PLAY_PAUSE: "CROSS",
 }
 SESSION_COMMANDS = ("SESSION_DISCONNECT", "SESSION_RECONNECT")
-SIMPLE_COMMANDS = sorted(BUTTONS) + list(SESSION_COMMANDS)
+RECORDING_COMMANDS = ("RECORD_SAVE", "RECORD_CANCEL")
+SIMPLE_COMMANDS = sorted(BUTTONS) + list(SESSION_COMMANDS) + list(RECORDING_COMMANDS)
 
 
 class PSNMediaPlayer(MediaPlayerEntity):
@@ -91,7 +92,10 @@ class PSNMediaPlayer(MediaPlayerEntity):
             if not media_id:
                 return StatusCodes.BAD_REQUEST
             try:
-                accepted = await self._device.launch_game(str(media_id))
+                if str(media_id).startswith("record:"):
+                    accepted = self._device.start_game_recording(str(media_id)[7:])
+                else:
+                    accepted = await self._device.launch_game(str(media_id))
                 return StatusCodes.OK if accepted else StatusCodes.SERVER_ERROR
             except Exception:
                 _LOG.exception("Sony PSN game launch failed for %s", media_id)
@@ -110,7 +114,11 @@ class PSNMediaPlayer(MediaPlayerEntity):
                     params.get("command") or params.get("simple_command")
                     or cmd_id
                 ).upper()
-                if raw in SESSION_COMMANDS:
+                if raw == "RECORD_SAVE":
+                    ok = self._device.save_game_recording()
+                elif raw == "RECORD_CANCEL":
+                    ok = self._device.cancel_game_recording()
+                elif raw in SESSION_COMMANDS:
                     ok = await (
                         self._device.release_session() if raw == "SESSION_DISCONNECT"
                         else self._device.reconnect_session()
@@ -134,33 +142,46 @@ class PSNMediaPlayer(MediaPlayerEntity):
         if not self._device.has_psn or not self._device.psn_authenticated:
             return StatusCodes.SERVICE_UNAVAILABLE
         paging: Paging = options.paging
+        recording = options.media_id == "record_games"
         titles, total = await self._device.get_game_library(
             limit=paging.limit, offset=paging.offset
         )
         items = [
             BrowseMediaItem(
-                media_id=game.title_id or "",
-                title=game.name or "Unknown game",
+                media_id=("record:" if recording else "") + (game.title_id or ""),
+                title=("Record launch: " if recording else "") + (game.name or "Unknown game"),
                 subtitle=game.last_played_date_time.strftime("%d %b %Y")
                 if game.last_played_date_time else None,
                 media_class=media_player.MediaClass.GAME,
                 can_browse=False,
-                can_play=self._device.can_launch_games,
+                can_play=(self._device.can_launch_games if recording
+                          else self._device.can_launch_game(game.title_id or "")),
                 thumbnail=str(game.image_url) if game.image_url else None,
             )
             for game in titles
         ]
+        # Preserve normal played-games browsing, adding one setup entry only
+        # on page one so pagination continues to work as before.
+        if not recording and paging.offset == 0 and self._device.has_control:
+            items.insert(0, BrowseMediaItem(
+                media_id="record_games",
+                title="Configure local game launching",
+                subtitle="Record the controller sequence once per game",
+                media_class=media_player.MediaClass.DIRECTORY,
+                can_browse=True,
+                can_play=False,
+            ))
         return BrowseResults(
             media=BrowseMediaItem(
-                media_id="psn_games",
-                title="Played games",
-                media_class=media_player.MediaClass.GAME,
+                media_id="record_games" if recording else "psn_games",
+                title="Record game navigation" if recording else "Played games",
+                media_class=media_player.MediaClass.DIRECTORY if recording else media_player.MediaClass.GAME,
                 can_browse=True,
                 items=items,
             ),
             pagination=Pagination(
                 page=paging.page,
                 limit=len(items),
-                count=total if total is not None else 0,
+                count=(total or 0) + (0 if recording or not self._device.has_control else 1),
             ),
         )
