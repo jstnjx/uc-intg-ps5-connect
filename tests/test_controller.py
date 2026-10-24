@@ -94,6 +94,12 @@ def import_controller():
     profile.UserProfile = FakeProfile
     sys.modules["pyremoteplay"] = pyremoteplay
     sys.modules["pyremoteplay.profile"] = profile
+    # The controller imports the standalone DDP identity helper.
+    helper_path = Path(__file__).resolve().parents[1] / "intg-ps5" / "lan_identity.py"
+    helper_spec = importlib.util.spec_from_file_location("lan_identity", helper_path)
+    helper = importlib.util.module_from_spec(helper_spec)
+    sys.modules["lan_identity"] = helper
+    helper_spec.loader.exec_module(helper)
     path = Path(__file__).resolve().parents[1] / "intg-ps5" / "controller.py"
     spec = importlib.util.spec_from_file_location("ps5_control_for_tests", path)
     module = importlib.util.module_from_spec(spec)
