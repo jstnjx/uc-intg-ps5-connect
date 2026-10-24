@@ -244,3 +244,51 @@ class PSNAPISensor(SensorEntity):
             sensor.Attributes.STATE: state,
             sensor.Attributes.VALUE: value,
         })
+
+
+class PSNTrophySensor(SensorEntity):
+    """Account trophy totals or current active game's trophy percentage."""
+
+    TYPES = {
+        "trophy_level": ("Trophy Level", "level", ""),
+        "platinum_trophies": ("Platinum Trophies", "platinum", "trophies"),
+        "earned_trophies": ("Earned Trophies", "earned_total", "trophies"),
+        "current_game_trophies": ("Current Game Trophies", "active_progress", "%"),
+    }
+
+    def __init__(self, device_config: PSNConfig, device: PSNAccount, kind: str):
+        self._kind = kind
+        display_name, _, units = self.TYPES[kind]
+        super().__init__(
+            create_entity_id(EntityTypes.SENSOR, f"{device_config.identifier}_{kind}"),
+            f"{device_config.name} {display_name}",
+            features=[],
+            attributes={
+                sensor.Attributes.STATE: sensor.States.UNKNOWN,
+                sensor.Attributes.VALUE: "",
+            },
+            device_class=sensor.DeviceClasses.CUSTOM,
+            options={sensor.Options.CUSTOM_UNIT: units} if units else {},
+        )
+        self._device = device
+        self.subscribe_to_device(device)
+
+    async def sync_state(self) -> None:
+        data = self._device.trophy_summary
+        if data is None or (self._kind == "current_game_trophies"
+                           and self._device.active_trophy_progress is None):
+            self.update({
+                sensor.Attributes.STATE: sensor.States.UNKNOWN,
+                sensor.Attributes.VALUE: "",
+            })
+            return
+        if self._kind == "earned_trophies":
+            value = sum(data.get(key, 0) for key in ("bronze", "silver", "gold", "platinum"))
+        elif self._kind == "current_game_trophies":
+            value = self._device.active_trophy_progress
+        else:
+            value = data[self.TYPES[self._kind][1]]
+        self.update({
+            sensor.Attributes.STATE: sensor.States.ON,
+            sensor.Attributes.VALUE: value,
+        })
