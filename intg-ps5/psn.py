@@ -14,6 +14,7 @@ from api import PlayStationNetwork, PlayStationNetworkData
 from const import PSNConfig
 from controller import PS5Controller, account_id_to_base64
 from game_launch import SonyGameLauncher, GameLaunchError, ConsoleSelectionError, GameLaunchTimeout, PSNAuthorizationError, normalize_title_id
+from game_metadata import fetch_installed_metadata, display_installed_title
 from psnawp_api.core.psnawp_exceptions import PSNAWPAuthenticationError
 from ucapi import media_player
 from ucapi_framework.device import PollingDevice
@@ -35,6 +36,8 @@ class PSNAccount(PollingDevice):
         self._next_psn_poll = 0.0
         self._total_game_count: int | None = None
         self._recent_art: dict[str, dict[str, str]] = {}
+        self._metadata_expiry = 0.0
+        self._metadata_task: asyncio.Task | None = None
         self._installed_titles: list[dict[str, str]] = []
         self.installed_count: int | None = None
         self.installed_inventory_available = False
@@ -298,39 +301,54 @@ class PSNAccount(PollingDevice):
             self.push_update()
             return available
 
+    async def _enrich_installed_titles(self) -> None:
+        """Get localized Sony title names/artwork with a bounded request budget."""
+        if not self._psn or not self._installed_titles:
+            return
+        try:
+            required = {item["title_id"] for item in self._installed_titles}
+            metadata = await asyncio.to_thread(
+                fetch_installed_metadata, self._psn.psn.authenticator, required,
+            )
+            # Keep earlier metadata if a transient PSN failure returns nothing.
+            for title, fields in metadata.items():
+                existing = self._recent_art.get(title, {})
+                self._recent_art[title] = {
+                    k: fields.get(k) or existing.get(k, "")
+                    for k in ("name", "image", "category")
+                }
+            if metadata:
+                self.push_update()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOG.debug("[%s] Installed-title enrichment unavailable", self.log_id, exc_info=True)
+        finally:
+            # Cache misses too; never hammer Sony on each media-browser visit.
+            self._metadata_expiry = asyncio.get_running_loop().time() + 900
+
     async def get_installed_game_library(
         self, limit: int = 20, offset: int = 0,
     ) -> tuple[list[dict[str, str]], int] | None:
         if not await self.refresh_installed_titles():
             return None
-        # Build a bounded history index for artwork. Games never played on
-        # this account still appear by title ID, not as fabricated entries.
-        if self._psn and not self._recent_art:
+        now = asyncio.get_running_loop().time()
+        if (
+            self._psn and now >= self._metadata_expiry
+            and (self._metadata_task is None or self._metadata_task.done())
+        ):
+            self._metadata_expiry = now + 900
+            self._metadata_task = asyncio.create_task(self._enrich_installed_titles())
+        if self._metadata_task and not self._metadata_task.done():
             try:
-                def history():
-                    rows = list(islice(self._psn.client.title_stats(offset=0, page_size=50), 150))
-                    return rows
-                rows = await asyncio.to_thread(history)
-                for item in rows:
-                    try:
-                        key = normalize_title_id(item.title_id)
-                    except (ValueError, AttributeError):
-                        continue
-                    self._recent_art[key] = {
-                        "name": str(item.name or ""),
-                        "image": str(item.image_url or ""),
-                    }
-            except Exception:
-                _LOG.debug("[%s] Optional game metadata lookup unavailable", self.log_id)
+                await asyncio.wait_for(asyncio.shield(self._metadata_task), timeout=12)
+            except asyncio.TimeoutError:
+                _LOG.debug("[%s] PSN artwork loading continues in background", self.log_id)
         limit, offset = max(1, min(int(limit), 50)), max(0, int(offset))
-        pages = []
-        for title in self._installed_titles[offset: offset + limit]:
-            art = self._recent_art.get(title["title_id"], {})
-            pages.append({
-                **title,
-                "name": art.get("name") or title["name"] or title["title_id"],
-                "image": art.get("image") or "",
-            })
+        pages = [
+            display_installed_title(title, self._recent_art.get(title["title_id"]))
+            for title in self._installed_titles[offset:offset + limit]
+        ]
         return pages, len(self._installed_titles)
 
     async def launch_game(self, title_id: str) -> bool:
@@ -390,6 +408,13 @@ class PSNAccount(PollingDevice):
         await self.poll_device()
 
     async def disconnect(self) -> None:
+        if self._metadata_task and not self._metadata_task.done():
+            self._metadata_task.cancel()
+            try:
+                await self._metadata_task
+            except asyncio.CancelledError:
+                pass
+        self._metadata_task = None
         if self._inventory_task and not self._inventory_task.done():
             self._inventory_task.cancel()
             try:
