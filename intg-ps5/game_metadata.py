@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import time
-from urllib.parse import urlparse
 
 from game_launch import normalize_title_id
 
@@ -104,7 +103,7 @@ def fetch_installed_metadata(authenticator, required_ids: set[str],
     return metadata
 
 
-def display_installed_title(row: dict[str, str], metadata: dict[str, str] | None = None) -> dict[str, str]:
+def display_installed_title(row: dict[str, str], metadata: dict[str, str] | None = None) -> dict[str, object]:
     """Present a friendly fallback instead of a bare raw ID or fake artwork."""
     metadata = metadata or {}
     title_id = row["title_id"]

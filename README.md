@@ -24,6 +24,17 @@ An [Unfolded Circle](https://www.unfoldedcircle.com/) Remote Two / Remote 3 inte
 
 PSN features require a valid NPSSO token. Local power and controller functions can be configured with a PSN Account ID instead.
 
+**Game artwork and titles:** Installed titles are matched with Sony's paginated
+PlayStation game-list metadata (localized names and cover images). The integration
+caches lookups for 15 minutes. When Sony does not provide metadata for a title,
+the browser shows **Unknown PlayStation title**, its title ID and a generic
+gamepad icon; it does not fabricate a game name or cover. The **Recently played**
+view remains available through the Library View selector.
+
+**Select controls:** The Profile and Library View entities explicitly publish
+their options on connection and subsequent state updates. The Profile selector
+always includes the currently paired user.
+
 ## 2. Installation
 
 1. Download **`uc-intg-ps5-control-aarch64.tar.gz`** from the [latest release](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build workflow](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
