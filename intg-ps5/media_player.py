@@ -10,7 +10,8 @@ from typing import Any
 
 from const import PSNConfig
 from controller import BUTTONS
-from game_launch import GameLaunchError, ConsoleSelectionError, GameLaunchTimeout
+from game_launch import GameLaunchError, ConsoleSelectionError, GameLaunchTimeout, normalize_title_id
+from game_metadata import clean_game_title
 from psn import PSNAccount
 from ucapi import StatusCodes, media_player
 from ucapi.api_definitions import Pagination, Paging
@@ -152,14 +153,18 @@ class PSNMediaPlayer(MediaPlayerEntity):
                 BrowseMediaItem(
                     media_id="installed_games",
                     title="Installed games & apps",
-                    subtitle="On the paired PS5, as reported by PSN",
                     media_class=media_player.MediaClass.DIRECTORY,
                     can_browse=True, can_play=False,
                 ),
                 BrowseMediaItem(
                     media_id="psn_games",
                     title="Recently played",
-                    subtitle="PlayStation Network game history",
+                    media_class=media_player.MediaClass.DIRECTORY,
+                    can_browse=True, can_play=False,
+                ),
+                BrowseMediaItem(
+                    media_id="game_details",
+                    title="Game details & playtime",
                     media_class=media_player.MediaClass.DIRECTORY,
                     can_browse=True, can_play=False,
                 ),
@@ -187,12 +192,7 @@ class PSNMediaPlayer(MediaPlayerEntity):
             items = [
                 BrowseMediaItem(
                     media_id=item["title_id"],
-                    title=item["name"],
-                    subtitle=(
-                        f"Title ID: {item['title_id']}"
-                        if item.get("missing_name")
-                        else (item.get("category") or "Installed on PS5")
-                    ),
+                    title=clean_game_title(item["name"]) or "Unknown PlayStation title",
                     media_class=media_player.MediaClass.GAME,
                     can_browse=False, can_play=self._device.can_launch_games,
                     thumbnail=item.get("image") or "icon://uc:gamepad-modern",
@@ -208,6 +208,81 @@ class PSNMediaPlayer(MediaPlayerEntity):
                 pagination=Pagination(page=paging.page, limit=paging.limit, count=total),
             )
 
+        if folder == "game_details":
+            result = await self._device.get_installed_game_library(
+                limit=paging.limit, offset=paging.offset,
+            )
+            if result is None:
+                return StatusCodes.SERVICE_UNAVAILABLE
+            entries, total = result
+            return BrowseResults(
+                media=BrowseMediaItem(
+                    media_id="game_details", title="Game details & playtime",
+                    media_class=media_player.MediaClass.DIRECTORY,
+                    can_browse=True,
+                    items=[
+                        BrowseMediaItem(
+                            media_id=f"details:{game['title_id']}",
+                            title=clean_game_title(game["name"]) or "Unknown PlayStation title",
+                            media_class=media_player.MediaClass.GAME,
+                            can_browse=True, can_play=False,
+                            thumbnail=game.get("image") or "icon://uc:gamepad-modern",
+                        )
+                        for game in entries
+                    ],
+                ),
+                pagination=Pagination(page=paging.page, limit=paging.limit, count=total),
+            )
+
+        if folder.startswith("details:"):
+            try:
+                title_id = normalize_title_id(folder.split(":", 1)[1])
+            except ValueError:
+                return StatusCodes.BAD_REQUEST
+            details = await self._device.get_game_details(title_id)
+            seconds = details.get("playtime")
+            playtime = (
+                f"Playtime: {seconds // 3600} h {(seconds % 3600) // 60} min"
+                if isinstance(seconds, int) else "Playtime unavailable"
+            )
+            count = details.get("play_count")
+            last = details.get("last_played")
+            first = details.get("first_played")
+            rows = [
+                BrowseMediaItem(
+                    media_id=title_id,
+                    title="Launch game",
+                    media_class=media_player.MediaClass.GAME,
+                    can_browse=False, can_play=self._device.can_launch_games,
+                    thumbnail=details.get("image") or "icon://uc:gamepad-modern",
+                ),
+                BrowseMediaItem(media_id=f"stats:playtime:{title_id}", title=playtime,
+                                can_browse=False, can_play=False),
+                BrowseMediaItem(
+                    media_id=f"stats:count:{title_id}",
+                    title=f"Times played: {count}" if count is not None else "Play count unavailable",
+                    can_browse=False, can_play=False,
+                ),
+                BrowseMediaItem(
+                    media_id=f"stats:last:{title_id}",
+                    title=f"Last played: {last:%d %b %Y}" if last else "Last played unavailable",
+                    can_browse=False, can_play=False,
+                ),
+                BrowseMediaItem(
+                    media_id=f"stats:first:{title_id}",
+                    title=f"First played: {first:%d %b %Y}" if first else "First played unavailable",
+                    can_browse=False, can_play=False,
+                ),
+            ]
+            return BrowseResults(
+                media=BrowseMediaItem(
+                    media_id=folder, title=clean_game_title(details.get("name"))
+                    or "Game details", media_class=media_player.MediaClass.DIRECTORY,
+                    can_browse=True, items=rows[paging.offset:paging.offset+paging.limit],
+                ),
+                pagination=Pagination(page=paging.page, limit=paging.limit, count=len(rows)),
+            )
+
         if folder != "psn_games":
             return StatusCodes.NOT_FOUND
 
@@ -217,9 +292,7 @@ class PSNMediaPlayer(MediaPlayerEntity):
         items = [
             BrowseMediaItem(
                 media_id=game.title_id or "",
-                title=game.name or "Unknown game",
-                subtitle=game.last_played_date_time.strftime("%d %b %Y")
-                if game.last_played_date_time else None,
+                title=clean_game_title(game.name) or "Unknown PlayStation title",
                 media_class=media_player.MediaClass.GAME,
                 can_browse=False,
                 can_play=self._device.can_launch_games,
