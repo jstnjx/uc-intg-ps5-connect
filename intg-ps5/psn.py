@@ -90,12 +90,24 @@ class PSNAccount(PollingDevice):
 
     @property
     def profile_options(self) -> list[str]:
-        """Only registered Remote Play profiles for this console are selectable."""
+        """Expose valid registered users plus the currently paired user.
+
+        pyremoteplay versions and migrated configs can carry profile records in
+        slightly different shapes. The selected, successfully paired user must
+        never disappear from the chooser merely due to missing metadata.
+        """
         if not self.has_control:
             return []
         profiles = self._device_config.ps_device.get("profiles", {})
-        return sorted(str(name) for name, data in profiles.items()
-                      if isinstance(data, dict) and data.get("id"))
+        selected = self.selected_profile
+        valid = set()
+        if isinstance(profiles, dict):
+            for name, data in profiles.items():
+                if isinstance(data, dict) and data.get("id"):
+                    valid.add(str(name))
+        if selected and isinstance(profiles, dict) and selected in profiles:
+            valid.add(selected)
+        return sorted(valid)
 
     @property
     def selected_profile(self) -> str:
