@@ -78,6 +78,7 @@ class PS5Controller:
         self._last_wake = -1000.0
         self.idle_seconds = idle_seconds
         self._lock = asyncio.Lock()
+        self._wake_lock = asyncio.Lock()
         self._last_press = 0.0
         self._idle_task: asyncio.Task | None = None
         self._wake_task: asyncio.Task | None = None
@@ -209,19 +210,21 @@ class PS5Controller:
         return await self.ensure_session()
 
     async def wake(self) -> bool:
-        now = asyncio.get_running_loop().time()
-        # Repeated remote/automation power commands should not flood UDP wake.
-        if now - self._last_wake < 8:
-            return True
-        try:
-            await asyncio.to_thread(self.device.wakeup, self.username, self.profiles)
-            self._last_wake = now
-            if self._wake_task is None or self._wake_task.done():
-                self._wake_task = asyncio.create_task(self._warm_after_wakeup())
-            return True
-        except Exception:
-            _LOG.exception("Wake request failed")
-            return False
+        # Serialize overlapping wake requests from activities and dashboard
+        # buttons before applying the successful-send cooldown.
+        async with self._wake_lock:
+            now = asyncio.get_running_loop().time()
+            if now - self._last_wake < 8:
+                return True
+            try:
+                await asyncio.to_thread(self.device.wakeup, self.username, self.profiles)
+                self._last_wake = now
+                if self._wake_task is None or self._wake_task.done():
+                    self._wake_task = asyncio.create_task(self._warm_after_wakeup())
+                return True
+            except Exception:
+                _LOG.exception("Wake request failed")
+                return False
 
     async def _warm_after_wakeup(self) -> None:
         try:
