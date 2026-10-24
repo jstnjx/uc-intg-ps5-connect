@@ -59,11 +59,14 @@ class PS5ProfileSelect(SelectEntity):
 
     async def sync_state(self) -> None:
         options = self._device.profile_options
+        # Force the options list into configured entity state. UC's available
+        # entity description deliberately excludes attributes, and an unchanged
+        # options list otherwise does not generate a state-change event.
         self.update({
             select.Attributes.STATE: select.States.ON if options else select.States.UNAVAILABLE,
             select.Attributes.CURRENT_OPTION: self._device.selected_profile if options else "",
             select.Attributes.OPTIONS: options,
-        })
+        }, force=True)
 
     async def command(
         self, cmd_id: str, params: dict[str, Any] | None = None, *, websocket: Any,
@@ -75,6 +78,8 @@ class PS5ProfileSelect(SelectEntity):
                 cmd_id, params or {}, self._device.profile_options, self._device.selected_profile,
             )
             success = await self._device.select_profile(new_value)
+            if success:
+                await self.sync_state()
             return StatusCodes.OK if success else StatusCodes.CONFLICT
         except ValueError:
             return StatusCodes.BAD_REQUEST
@@ -107,7 +112,7 @@ class PS5LibraryViewSelect(SelectEntity):
             select.Attributes.STATE: select.States.ON if self._device.has_psn else select.States.UNAVAILABLE,
             select.Attributes.CURRENT_OPTION: LIBRARY_LABELS[self._device.library_view],
             select.Attributes.OPTIONS: list(LIBRARY_LABELS.values()),
-        })
+        }, force=True)
 
     async def command(
         self, cmd_id: str, params: dict[str, Any] | None = None, *, websocket: Any,
@@ -120,6 +125,8 @@ class PS5LibraryViewSelect(SelectEntity):
             selection = resolve_selection(cmd_id, params or {}, options, current)
             value = next(key for key, label in LIBRARY_LABELS.items() if label == selection)
             success = await self._device.select_library_view(value)
+            if success:
+                await self.sync_state()
             return StatusCodes.OK if success else StatusCodes.SERVER_ERROR
         except ValueError:
             return StatusCodes.BAD_REQUEST
