@@ -48,24 +48,48 @@ def _resized_cover(url: str) -> str:
     try:
         import requests
         from PIL import Image, ImageOps
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        # Never fetch local or arbitrary endpoints from Sony metadata.
-        host = (parsed.hostname or "").lower()
-        trusted = ("playstation.net", "playstation.com", "sony.com")
-        if not any(host == allowed or host.endswith("." + allowed) for allowed in trusted):
+        from urllib.parse import urlparse, urljoin
+
+        def trusted_url(candidate: str) -> bool:
+            parsed = urlparse(candidate)
+            host = (parsed.hostname or "").lower()
+            trusted = ("playstation.net", "playstation.com", "sony.com")
+            return parsed.scheme == "https" and any(
+                host == allowed or host.endswith("." + allowed)
+                for allowed in trusted
+            )
+
+        if not trusted_url(url):
             return ""
-        response = requests.get(url, timeout=5, allow_redirects=False,
-                                headers={"Accept": "image/jpeg,image/png,image/webp"})
-        if response.status_code != 200 or len(response.content) > MAX_DOWNLOAD:
-            return ""
-        with Image.open(BytesIO(response.content)) as original:
-            if original.width > 4096 or original.height > 4096:
+        # Explicitly check every Sony CDN redirect rather than permitting
+        # external or private-network locations to be fetched.
+        for _ in range(4):
+            response = requests.get(
+                url, timeout=5, allow_redirects=False, stream=True,
+                headers={"Accept": "image/jpeg,image/png,image/webp"},
+            )
+            if response.status_code in (301, 302, 303, 307, 308):
+                redirected = urljoin(url, response.headers.get("Location", ""))
+                response.close()
+                if not trusted_url(redirected):
+                    return ""
+                url = redirected
+                continue
+            if response.status_code != 200:
+                response.close()
                 return ""
-            image = ImageOps.contain(original.convert("RGB"), (SIZE, SIZE))
-            output = BytesIO()
-            image.save(output, format="JPEG", quality=66, optimize=True)
-            return base64.b64encode(output.getvalue()).decode("ascii")
+            content = response.raw.read(MAX_DOWNLOAD + 1)
+            response.close()
+            if len(content) > MAX_DOWNLOAD:
+                return ""
+            with Image.open(BytesIO(content)) as original:
+                if original.width > 2048 or original.height > 2048:
+                    return ""
+                image = ImageOps.contain(original.convert("RGB"), (SIZE, SIZE))
+                output = BytesIO()
+                image.save(output, format="JPEG", quality=66, optimize=True)
+                return base64.b64encode(output.getvalue()).decode("ascii")
+        return ""
     except Exception as exc:
         _LOG.debug("Artwork thumbnail not available: %s", type(exc).__name__)
         return ""
