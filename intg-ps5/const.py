@@ -9,3 +9,6 @@ class PSNConfig:
     npsso: str = ""
     ps_device: dict[str, Any] = field(default_factory=dict)
     launch_device_id: str = ""
+    console_host_id: str = ""  # LAN DDP host-id; not the PSN DUID
+    console_name: str = ""
+    psn_account_id: str = ""

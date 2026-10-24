@@ -161,6 +161,12 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
                 npsso=self._npsso or (existing.npsso if existing else ""),
                 ps_device=dict(existing.ps_device) if existing else {},
                 launch_device_id=self._launch_device_id or (existing.launch_device_id if existing else ""),
+            console_host_id=(credentials.get("host_id") or (existing.console_host_id if existing else "")),
+            console_name=(credentials.get("host_name") or (existing.console_name if existing else "")),
+            psn_account_id=self._account_id or (existing.psn_account_id if existing else ""),
+                console_host_id=existing.console_host_id if existing else "",
+                console_name=existing.console_name if existing else "",
+                psn_account_id=self._account_id or (existing.psn_account_id if existing else ""),
             )
         self._pending_device_config = PSNConfig(
             identifier="ps5_pending",

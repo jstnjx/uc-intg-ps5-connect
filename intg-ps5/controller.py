@@ -48,13 +48,16 @@ def register_console(host: str, account_id: str, pin: str, username: str = "ps5-
     profiles = Profiles()
     profiles.update_user(UserProfile(username, {"id": account_id_to_base64(account_id), "hosts": {}}))
     device = RPDevice(host)
-    if not device.get_status():
+    status = device.get_status()
+    if not status:
         raise ConnectionError("PS5 is unreachable; turn it on and enable Remote Play")
     if not device.register(username, pin, profiles=profiles, save=False):
         raise ConnectionError("Registration failed; regenerate PIN and verify PSN account ID")
     return {
         "device_ip": host,
         "device_type": "PS5",
+        "host_id": str(status.get("host-id") or "").strip(),
+        "host_name": str(status.get("host-name") or "").strip(),
         "user": username,
         "profiles": dict(profiles),
     }
