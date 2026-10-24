@@ -29,7 +29,7 @@ class FakeConfigManager:
 class FakeBaseSetup:
     def __init__(self, config, *, driver=None, **kwargs):
         self.config = config
-        self.driver = driver or types.SimpleNamespace(loop=asyncio.get_running_loop())
+        self.driver = driver or types.SimpleNamespace(loop=None)
         self._selected_config_id = None
         self._pending_device_config = None
 
