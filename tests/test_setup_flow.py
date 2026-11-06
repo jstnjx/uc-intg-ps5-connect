@@ -25,6 +25,9 @@ class FakeConfigManager:
 
 
 class FakeBaseSetup:
+    def __class_getitem__(cls, _item):
+        return cls
+
     def __init__(self, config, *, driver=None, **kwargs):
         self.config = config
         self.driver = driver or types.SimpleNamespace(loop=None)
@@ -55,6 +58,11 @@ class FakeStart:
 
 class FakeAbort:
     pass
+
+
+class FakeUserData:
+    def __init__(self, input_values=None):
+        self.input_values = input_values or {}
 
 
 def account_id_base64(account_id):
@@ -90,6 +98,7 @@ def setup_module():
             IntegrationSetupError=types.SimpleNamespace(OTHER="other"),
             RequestUserInput=FakeRequestInput, SetupError=FakeError,
             DriverSetupRequest=FakeStart, AbortDriverSetup=FakeAbort,
+            UserDataResponse=FakeUserData,
         ),
         "ucapi_framework": types.SimpleNamespace(BaseSetupFlow=FakeBaseSetup),
     }
@@ -193,6 +202,28 @@ class SetupFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(flow._pending_device_config)
         self.assertIsNone(flow._selected_config_id)
         self.assertEqual(flow._step, "")
+
+
+    async def test_web_configurator_screens_are_not_sent_instantly(self):
+        # The web configurator misses screens sent right after the progress
+        # event and loops without fields; replies must be held back.
+        flow, _ = self.existing_flow()
+        screen = FakeRequestInput({"en": "Edit PlayStation 5"}, [])
+
+        async def instant(_self, msg):
+            return screen
+
+        sleeps = []
+
+        async def fake_sleep(delay):
+            sleeps.append(delay)
+
+        with patch.object(FakeBaseSetup, "handle_driver_setup", instant), \
+                patch.object(SETUP.asyncio, "sleep", fake_sleep):
+            result = await flow.handle_driver_setup(FakeUserData({"action": "update"}))
+        self.assertIs(result, screen)
+        self.assertEqual(len(sleeps), 1)
+        self.assertGreater(sleeps[0], 0.9)
 
 
 if __name__ == "__main__":

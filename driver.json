@@ -1,6 +1,6 @@
 {
   "driver_id": "ps5_connect_driver",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "min_core_api": "0.20.0",
   "name": {
     "en": "PS5 Connect"
@@ -34,5 +34,5 @@
       }
     ]
   },
-  "release_date": "2026-10-24"
+  "release_date": "2026-11-06"
 }

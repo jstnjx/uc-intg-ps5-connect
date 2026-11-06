@@ -10,7 +10,7 @@ class PS5ConnectReleaseTests(unittest.TestCase):
     def test_manifest_name_version_and_new_driver_id(self):
         manifest = json.loads((ROOT / "driver.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"]["en"], "PS5 Connect")
-        self.assertEqual(manifest["version"], "1.0.0")
+        self.assertEqual(manifest["version"], "1.0.1")
         self.assertEqual(manifest["driver_id"], "ps5_connect_driver")
         self.assertEqual(manifest["setup_data_schema"]["title"]["en"], "PS5 Connect setup")
         code = (ROOT / "intg-ps5" / "driver.py").read_text(encoding="utf-8")
@@ -21,7 +21,7 @@ class PS5ConnectReleaseTests(unittest.TestCase):
         script = (ROOT / "build.sh").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
         self.assertEqual(readme.splitlines()[0], "# PS5 Connect")
-        self.assertIn("uc-intg-ps5-connect-v1.0.0-aarch64.tar.gz", readme)
+        self.assertIn("uc-intg-ps5-connect-v1.0.1-aarch64.tar.gz", readme)
         self.assertIn('ARCHIVE="uc-intg-ps5-connect-v${VERSION}-aarch64.tar.gz"', script)
         self.assertIn('ARCHIVE="uc-intg-ps5-connect-v${VERSION}-aarch64.tar.gz"', workflow)
         self.assertIn("steps.build.outputs.archive", workflow)

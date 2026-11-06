@@ -18,11 +18,17 @@ from const import PSNConfig
 from controller import account_id_to_base64, register_console
 from psnawp_api.utils.misc import parse_npsso_token
 from ucapi import (AbortDriverSetup, DriverSetupRequest, IntegrationSetupError,
-                   RequestUserInput, SetupError)
+                   RequestUserInput, SetupError, UserDataResponse)
 from ucapi_framework import BaseSetupFlow
 
 _LOG = logging.getLogger(__name__)
 _MANUAL = "__manual__"
+# The web configurator drops a user-input screen that arrives immediately after
+# the "setup in progress" event that ucapi sends for every submitted page, and
+# then keeps spinning without showing any fields. The on-remote UI is not
+# affected. ucapi-framework only pads its own configuration-mode screen (1 s),
+# so every screen produced by this flow is held back to the same minimum.
+_WEB_CONFIGURATOR_MIN_REPLY = 1.0
 
 
 def _label(message: str, identifier: str = "information") -> dict:
@@ -90,7 +96,13 @@ class PSNSetupFlow(BaseSetupFlow[PSNConfig]):
             self._account_id = ""
             self._psn_name = "PlayStation 5"
             self._launch_device_id = ""
-        return await super().handle_driver_setup(msg)
+        started = time.monotonic()
+        result = await super().handle_driver_setup(msg)
+        if isinstance(msg, UserDataResponse) and isinstance(result, (RequestUserInput, SetupError)):
+            remaining = _WEB_CONFIGURATOR_MIN_REPLY - (time.monotonic() - started)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
+        return result
 
     def get_manual_entry_form(self) -> RequestUserInput:
         return self._account_form()
