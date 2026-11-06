@@ -25,7 +25,7 @@ class SetupContractTests(unittest.TestCase):
     def test_no_credentials_in_psn_only_setup_path(self):
         source = (ROOT / "intg-ps5" / "setup_flow.py").read_text(encoding="utf-8")
         segment = source.split("        if not control:", 1)[1].split(
-            "        self._pending_device_config = PSNConfig(", 1,
+            "        # Only a new PS5 (or explicit re-pair) needs discovery and the PIN.", 1,
         )[0]
         self.assertNotIn("credentials", segment)
 

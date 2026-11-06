@@ -21,7 +21,7 @@ _MAX_PAGES = 16
 _TOTAL_BUDGET = 14.0
 
 
-_NOISE = re.compile(r"\\s*(?:\\((?:TM|R|PS4|PS5|PlayStation\\s*[45]|PlayStation\\s*[®™]\\s*[45])\\)|[™®])\\s*$", re.I)
+_NOISE = re.compile(r"\s*(?:\((?:TM|R|PS4|PS5|PlayStation\s*[45]|PlayStation\s*[®™]\s*[45])\)|[™®])\s*$", re.I)
 _BAD_NAMES = {"unknown playstation title", "unknown game", "ps5_native_game", "ps4_game"}
 
 
@@ -29,12 +29,12 @@ def clean_game_title(raw: object) -> str:
     """Normalize HTML entities, platform branding and trademark suffixes."""
     name = html.unescape(str(raw or "")).strip()
     name = re.sub(r"<[^>]*>", "", name)
-    name = re.sub(r"\\s+", " ", name)
+    name = re.sub(r"\s+", " ", name)
     previous = None
     while name and previous != name:
         previous = name
         name = _NOISE.sub("", name).strip(" -–")
-    if name.casefold() in _BAD_NAMES or re.fullmatch(r"(?:CUSA|PPSA|NPXS)\\d+(?:_00)?", name, re.I):
+    if name.casefold() in _BAD_NAMES or re.fullmatch(r"(?:CUSA|PPSA|NPXS)\d+(?:_00)?", name, re.I):
         return ""
     return name[:255]
 
