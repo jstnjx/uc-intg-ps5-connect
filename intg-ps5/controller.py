@@ -22,6 +22,8 @@ BUTTONS = frozenset({
     "L1", "R1", "L2", "R2", "L3", "R3", "OPTIONS", "SHARE", "PS", "TOUCHPAD"
 })
 RAPID_BUTTONS = frozenset({"UP", "DOWN", "LEFT", "RIGHT", "L1", "R1", "L2", "R2"})
+STATUS_STANDBY = 620 
+STANDBY_CONFIRM_SECONDS = 8.0
 
 
 def account_id_to_base64(account_id: str) -> str:
@@ -238,13 +240,55 @@ class PS5Controller:
     async def standby(self) -> bool:
         try:
             if not await self.ensure_session():
-                return False
-            return bool(await self.device.standby(self.username, self.profiles))
+               
+                return await self._reports_standby()
+          
+            session = getattr(self.device, "session", None)
+            if await self.device.standby(self.username, self.profiles):
+                return True
+          
+            return await self._confirm_standby(session)
         except Exception:
             _LOG.exception("Standby request failed")
             return False
         finally:
             await self.release_session(pause_seconds=5)
+
+    @staticmethod
+    def _session_closed_by_host(session: Any) -> bool:
+        if session is None:
+            return False
+        return bool(getattr(session, "disconnect_reason", "")) or bool(getattr(session, "is_stopped", False))
+
+    async def _reports_standby(self) -> bool:
+        """True only if the console positively reports Rest Mode over DDP."""
+        try:
+            result = await asyncio.to_thread(self.device.get_status)
+        except (OSError, TimeoutError):
+            return False
+        return bool(result) and result.get("status-code") == STATUS_STANDBY
+
+    async def _confirm_standby(self, session: Any, timeout: float | None = None) -> bool:
+        """Wait until the host ends the session or DDP reports Rest Mode."""
+        timeout = STANDBY_CONFIRM_SECONDS if timeout is None else timeout
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        next_status = loop.time() + 1.0
+        while loop.time() < deadline:
+            if self._session_closed_by_host(session):
+                _LOG.debug("PS5 standby confirmed: session closed (%s)",
+                           getattr(session, "disconnect_reason", "") or "stopped")
+                return True
+            if loop.time() >= next_status:
+                next_status = loop.time() + 1.0
+                if await self._reports_standby():
+                    _LOG.debug("PS5 standby confirmed: DDP reports Rest Mode")
+                    return True
+            await asyncio.sleep(0.1)
+        if self._session_closed_by_host(session) or await self._reports_standby():
+            return True
+        _LOG.warning("PS5 did not confirm standby within %.0f s", timeout)
+        return False
 
     async def button(self, button: str, action: str = "tap") -> bool:
         button = button.upper().strip()

@@ -167,6 +167,57 @@ class ControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self.controller.standby())
         self.assertFalse(self.controller.connected)
 
+    def _buggy_library_standby(self, disconnect_after=0.3, reason="Server shutting down"):
+        """Mimic pyremoteplay 0.7.6: send standby, return False immediately,
+        then the host disconnects a moment later."""
+        device = self.controller.device
+        session = types.SimpleNamespace(disconnect_reason="", is_stopped=False)
+        device.session = session
+
+        async def standby(username, profiles):
+            async def host_disconnects():
+                await asyncio.sleep(disconnect_after)
+                session.disconnect_reason = reason
+                session.is_stopped = True
+                device.is_on = False
+            if disconnect_after is not None:
+                asyncio.get_running_loop().create_task(host_disconnects())
+            return False
+
+        device.standby = standby
+        return session
+
+    async def test_standby_succeeds_when_library_returns_false_early(self):
+        self._buggy_library_standby(disconnect_after=0.3)
+        self.assertTrue(await self.controller.standby())
+        self.assertFalse(self.controller.connected)
+
+    async def test_standby_confirmed_by_ddp_rest_mode(self):
+        self._buggy_library_standby(disconnect_after=None)
+        statuses = iter([{"host-type": "PS5", "status-code": 200}])
+        self.controller.device.get_status = lambda: next(statuses, {"status-code": 620})
+        self.assertTrue(await self.controller.standby())
+
+    async def test_standby_fails_when_console_never_confirms(self):
+        self._buggy_library_standby(disconnect_after=None)
+        self.controller.device.get_status = lambda: {"host-type": "PS5", "status-code": 200}
+        original = control.STANDBY_CONFIRM_SECONDS
+        control.STANDBY_CONFIRM_SECONDS = 0.3
+        try:
+            self.assertFalse(await self.controller.standby())
+        finally:
+            control.STANDBY_CONFIRM_SECONDS = original
+
+    async def test_standby_when_already_in_rest_mode(self):
+        self.controller.device.is_on = False
+        self.controller.device.get_status = lambda: {"host-type": "PS5", "status-code": 620}
+        self.assertTrue(await self.controller.standby())
+
+    async def test_standby_unreachable_console_is_failure(self):
+        self.controller.device.is_on = False
+        self.controller.device.get_status = lambda: None
+        self.assertFalse(await self.controller.standby())
+
     async def test_device_off_rejects_button(self):
         self.controller.device.is_on = False
         self.assertFalse(await self.controller.button("CROSS"))

@@ -11,7 +11,7 @@ PlayStation 5 integration for the [Unfolded Circle Remote Two and Remote 3](http
 
 ## 2. Installation
 
-1. Get `uc-intg-ps5-connect-v1.0.1-aarch64.tar.gz` from [Releases](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
+1. Get `uc-intg-ps5-connect-v1.0.2-aarch64.tar.gz` from [Releases](https://github.com/jstnjx/uc-intg-ps5-control/releases) or a successful [build](https://github.com/jstnjx/uc-intg-ps5-control/actions/workflows/build.yml).
 2. In the Remote web configurator, open **Settings → Integrations → Upload custom integration** and upload the archive.
 3. Start setup. Enter a **PSN NPSSO token** for PSN features, or a **PSN Account ID** for local controls only.
 4. Select your PS5 (or enter its IP address), then enter the eight-digit code from **PS5 Settings → System → Remote Play → Link Device**.
@@ -32,7 +32,7 @@ cd uc-intg-ps5-control
 ./build.sh
 ```
 
-Output: `uc-intg-ps5-connect-v1.0.1-aarch64.tar.gz`.
+Output: `uc-intg-ps5-connect-v1.0.2-aarch64.tar.gz`.
 
 ## 4. Acknowledgments
 
